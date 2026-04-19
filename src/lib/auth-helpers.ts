@@ -1,13 +1,16 @@
-// Username-only auth: we shim a fake email so Supabase auth (which requires
-// email format) accepts username/password without ever exposing email to the user.
-// Use a reserved, syntactically valid domain instead of `.local`, which some
-// validators reject.
+// Supabase auth is still email/password under the hood.
+// The product is username-first, so we map usernames to a reserved email domain
+// and keep the transformation isolated here instead of spreading it through auth code.
 const EMAIL_DOMAIN = "example.com";
 
 export function usernameToEmail(username: string): string {
   return `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
 }
 
-export function isValidUsername(u: string): boolean {
-  return /^[a-z0-9_]{3,24}$/i.test(u);
+export function normalizeUsername(username: string): string {
+  return username.trim().toLowerCase();
+}
+
+export function isValidUsername(username: string): boolean {
+  return /^[a-z0-9_]{3,24}$/i.test(username);
 }

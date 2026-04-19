@@ -14,7 +14,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex h-app overflow-hidden bg-background">
       <ChatSidebar />
       <main className="hidden flex-1 flex-col items-center justify-center px-8 md:flex">
         <div className="max-w-md text-center">

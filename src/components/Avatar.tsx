@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { resolveAvatarUrl } from "@/lib/avatar";
 
 interface AvatarProps {
   name: string;
@@ -23,6 +24,7 @@ function initialsFromName(name: string) {
 export function Avatar({ name, url, size = "md", className }: AvatarProps) {
   const label = name?.trim() || "Unknown";
   const initials = initialsFromName(label);
+  const resolvedUrl = resolveAvatarUrl(url);
 
   return (
     <div
@@ -33,8 +35,8 @@ export function Avatar({ name, url, size = "md", className }: AvatarProps) {
       )}
       aria-label={label}
     >
-      {url ? (
-        <img src={url} alt={label} className="h-full w-full object-cover" />
+      {resolvedUrl ? (
+        <img src={resolvedUrl} alt={label} className="h-full w-full object-cover" />
       ) : (
         <div className="flex h-full w-full items-center justify-center font-semibold tracking-[0.16em] text-white/88">
           {initials}

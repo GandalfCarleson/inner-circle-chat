@@ -1,9 +1,15 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { listConversations, type ConversationSummary } from "@/lib/messaging";
+import {
+  getConversationPreview,
+  listConversations,
+  listUnreadCounts,
+  type ConversationSummary,
+} from "@/lib/messaging";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar } from "@/components/Avatar";
+import { NewChatDialog } from "@/components/NewChatDialog";
 import { MessageCircle, Users, Settings, LogOut, Plus, Sparkles, Search } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 
@@ -11,79 +17,112 @@ interface Props {
   activeId?: string;
 }
 
+function getConversationTitle(conversation: ConversationSummary, currentUserId?: string) {
+  if (conversation.name) return conversation.name;
+  const others = conversation.members.filter((member) => member.user_id !== currentUserId);
+  if (others.length === 0) return "You";
+  return others.map((member) => member.display_name || member.username).join(", ");
+}
+
+function formatConversationTime(dateString: string) {
+  return formatDistanceToNowStrict(new Date(dateString))
+    .replace(" minutes", "m")
+    .replace(" minute", "m")
+    .replace(" hours", "h")
+    .replace(" hour", "h")
+    .replace(" days", "d")
+    .replace(" day", "d")
+    .replace(" seconds", "s")
+    .replace(" second", "s");
+}
+
+function getConversationAvatarUrl(conversation: ConversationSummary, currentUserId?: string) {
+  if (conversation.avatar_url) return conversation.avatar_url;
+  if (conversation.type === "group") return null;
+
+  const otherMember = conversation.members.find((member) => member.user_id !== currentUserId);
+  return otherMember?.avatar_url ?? null;
+}
+
 export function ChatSidebar({ activeId }: Props) {
   const { user, profile, signOut } = useAuth();
   const router = useRouter();
-  const [convs, setConvs] = useState<ConversationSummary[]>([]);
-  const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [pendingFriends, setPendingFriends] = useState(0);
   const [query, setQuery] = useState("");
+  const [newChatOpen, setNewChatOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
 
-    async function load() {
-      const list = await listConversations(user.id);
-      if (cancelled) return;
-      setConvs(list);
+    async function loadSidebarState() {
+      try {
+        const [loadedConversations, nextUnreadCounts, pendingCountResult] = await Promise.all([
+          listConversations(user.id),
+          listUnreadCounts(user.id),
+          supabase
+            .from("friendships")
+            .select("id", { count: "exact", head: true })
+            .eq("addressee_id", user.id)
+            .eq("status", "pending"),
+        ]);
 
-      const next: Record<string, string> = {};
-      for (const c of list) {
-        if (!c.last_message) continue;
-        if (c.last_message.type === "text") next[c.id] = c.last_message.ciphertext || "Say hi";
-        else next[c.id] = c.last_message.type === "image" ? "Photo" : "Voice note";
+        if (cancelled) return;
+        setConversations(loadedConversations);
+        setUnreadCounts(nextUnreadCounts);
+        setPendingFriends(pendingCountResult.count ?? 0);
+      } catch (error) {
+        console.error("Failed to load sidebar state", error);
+        if (!cancelled) {
+          setConversations([]);
+          setUnreadCounts({});
+          setPendingFriends(0);
+        }
       }
-      if (!cancelled) setPreviews(next);
     }
-    load();
 
-    supabase
-      .from("friendships")
-      .select("id", { count: "exact", head: true })
-      .eq("addressee_id", user.id)
-      .eq("status", "pending")
-      .then(({ count }) => !cancelled && setPendingFriends(count ?? 0));
+    void loadSidebarState();
 
-    const ch = supabase
+    // Sidebar only needs lightweight refresh triggers, not full message polling.
+    const channel = supabase
       .channel("sidebar-messages")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => load())
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
+        void loadSidebarState();
+      })
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "conversation_members", filter: `user_id=eq.${user.id}` },
-        () => load(),
+        { event: "*", schema: "public", table: "conversation_members", filter: `user_id=eq.${user.id}` },
+        () => {
+          void loadSidebarState();
+        },
       )
       .subscribe();
 
     return () => {
       cancelled = true;
-      supabase.removeChannel(ch);
+      supabase.removeChannel(channel);
     };
   }, [user]);
 
-  function convTitle(c: ConversationSummary): string {
-    if (c.name) return c.name;
-    const others = c.members.filter((m) => m.user_id !== user?.id);
-    if (others.length === 0) return "You";
-    return others.map((o) => o.display_name || o.username).join(", ");
-  }
-
   const filteredConversations = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return convs;
-    return convs.filter((c) => {
-      const title = convTitle(c).toLowerCase();
-      const preview = (previews[c.id] ?? "").toLowerCase();
+    if (!term) return conversations;
+
+    return conversations.filter((conversation) => {
+      const title = getConversationTitle(conversation, user?.id).toLowerCase();
+      const preview = getConversationPreview(conversation.last_message).toLowerCase();
       return title.includes(term) || preview.includes(term);
     });
-  }, [convs, previews, query]);
+  }, [conversations, query, user?.id]);
 
   const navButtonClass =
-    "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground";
+    "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11 h-12 w-12";
 
   return (
-    <aside className="app-shell-bg shell-noise relative flex h-full w-full flex-col overflow-hidden md:w-[27rem] md:flex-row premium-border md:rounded-[28px]">
-      <div className="hidden md:flex w-[5.5rem] flex-col items-center justify-between border-r subtle-divider bg-white/[0.02] px-4 py-5">
+    <aside className="app-shell-bg shell-noise relative flex h-full min-h-0 w-full flex-col overflow-hidden md:w-[27rem] md:flex-row premium-border md:rounded-[28px]">
+      <div className="hidden w-[5.5rem] flex-col items-center justify-between border-r subtle-divider bg-white/[0.02] px-4 py-5 md:flex">
         <div className="flex flex-col items-center gap-4">
           <Link
             to="/"
@@ -114,7 +153,7 @@ export function ChatSidebar({ activeId }: Props) {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="border-b subtle-divider px-4 pb-4 pt-5 md:px-5 md:pb-5">
+        <div className="safe-top-tight border-b subtle-divider px-4 pb-4 pt-3 md:px-5 md:pb-5 md:pt-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-[11px] uppercase tracking-[0.28em] text-white/38">Void</p>
@@ -125,9 +164,10 @@ export function ChatSidebar({ activeId }: Props) {
                 A quieter place for the people that matter.
               </p>
             </div>
-            <Link
-              to="/friends"
-              className="premium-panel quiet-hover relative inline-flex h-11 w-11 items-center justify-center rounded-2xl text-foreground"
+            <button
+              type="button"
+              onClick={() => setNewChatOpen(true)}
+              className="premium-panel quiet-hover relative inline-flex h-12 w-12 items-center justify-center rounded-2xl text-foreground"
               aria-label="Start chat"
             >
               <Plus className="h-4 w-4" />
@@ -136,7 +176,7 @@ export function ChatSidebar({ activeId }: Props) {
                   {pendingFriends}
                 </span>
               )}
-            </Link>
+            </button>
           </div>
 
           <div className="mt-4 flex items-center gap-3 rounded-[22px] premium-panel-soft px-4 py-3">
@@ -150,7 +190,7 @@ export function ChatSidebar({ activeId }: Props) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-3 md:px-4 md:py-4">
+        <div className="mobile-scroll-padding flex-1 overflow-y-auto px-3 py-3 md:px-4 md:py-4">
           {filteredConversations.length === 0 ? (
             <div className="premium-panel-soft mx-2 mt-8 rounded-[28px] px-6 py-8 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white/[0.035] text-white/70 premium-border">
@@ -175,23 +215,28 @@ export function ChatSidebar({ activeId }: Props) {
             </div>
           ) : (
             <ul className="space-y-2">
-              {filteredConversations.map((c) => {
-                const active = c.id === activeId;
-                const title = convTitle(c);
-                const preview = previews[c.id] ?? (c.last_message ? "Message" : "Say hi");
+              {filteredConversations.map((conversation) => {
+                const active = conversation.id === activeId;
+                const title = getConversationTitle(conversation, user?.id);
+                const preview = getConversationPreview(conversation.last_message);
+                const unreadCount = unreadCounts[conversation.id] ?? 0;
 
                 return (
-                  <li key={c.id}>
+                  <li key={conversation.id}>
                     <Link
                       to="/chat/$id"
-                      params={{ id: c.id }}
-                      className={`quiet-hover flex items-center gap-3 rounded-[24px] border px-3 py-3.5 ${
+                      params={{ id: conversation.id }}
+                      className={`quiet-hover flex items-center gap-3 rounded-[24px] border px-3 py-3.5 min-h-[4.5rem] ${
                         active
                           ? "conversation-selected"
                           : "interactive-surface border-transparent hover:border-white/8"
                       }`}
                     >
-                      <Avatar name={title} size="md" />
+                      <Avatar
+                        name={title}
+                        url={getConversationAvatarUrl(conversation, user?.id)}
+                        size="md"
+                      />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -203,18 +248,16 @@ export function ChatSidebar({ activeId }: Props) {
                             </p>
                           </div>
                           <div className="flex shrink-0 items-center gap-2 pt-0.5">
-                            {active && <span className="h-2 w-2 rounded-full bg-primary" />}
-                            {c.last_message && (
+                            {unreadCount > 0 ? (
+                              <span className="inline-flex min-w-5 items-center justify-center rounded-full border border-white/10 bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
+                                {unreadCount > 99 ? "99+" : unreadCount}
+                              </span>
+                            ) : (
+                              active && <span className="h-2 w-2 rounded-full bg-primary" />
+                            )}
+                            {conversation.last_message && (
                               <span className="text-[10px] uppercase tracking-[0.18em] text-white/34">
-                                {formatDistanceToNowStrict(new Date(c.last_message.created_at))
-                                  .replace(" minutes", "m")
-                                  .replace(" minute", "m")
-                                  .replace(" hours", "h")
-                                  .replace(" hour", "h")
-                                  .replace(" days", "d")
-                                  .replace(" day", "d")
-                                  .replace(" seconds", "s")
-                                  .replace(" second", "s")}
+                                {formatConversationTime(conversation.last_message.created_at)}
                               </span>
                             )}
                           </div>
@@ -228,12 +271,9 @@ export function ChatSidebar({ activeId }: Props) {
           )}
         </div>
 
-        <div className="border-t subtle-divider px-4 py-4 md:px-5">
+        <div className="safe-bottom border-t subtle-divider px-4 py-3 md:px-5 md:py-4">
           <div className="premium-panel-soft flex items-center gap-3 rounded-[24px] px-3 py-3">
-            <Avatar
-              name={profile?.display_name || profile?.username || "Unknown"}
-              size="sm"
-            />
+            <Avatar name={profile?.display_name || profile?.username || "Unknown"} size="sm" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-foreground">
                 {profile?.display_name || profile?.username}
@@ -263,6 +303,8 @@ export function ChatSidebar({ activeId }: Props) {
           </div>
         </div>
       </div>
+
+      <NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} />
     </aside>
   );
 }

@@ -1,5 +1,9 @@
 import { supabase } from "@/integrations/supabase/client";
 
+// Legacy schema note:
+// `ciphertext`, `nonce`, and `recipient_keys` are historical encryption-era columns.
+// The current frontend stores plain text in `ciphertext` and leaves the other fields empty.
+
 export interface ConversationSummary {
   id: string;
   type: "dm" | "group";
@@ -7,111 +11,264 @@ export interface ConversationSummary {
   avatar_url: string | null;
   disappearing_seconds: number | null;
   updated_at: string;
-  members: { user_id: string; username: string; display_name: string | null; avatar_url: string | null }[];
-  last_message?: { ciphertext: string; nonce: string; recipient_keys: Record<string, string>; sender_id: string; type: string; created_at: string } | null;
+  members: {
+    user_id: string;
+    username: string;
+    display_name: string | null;
+    avatar_url: string | null;
+  }[];
+  last_message?: {
+    ciphertext: string;
+    nonce: string;
+    recipient_keys: Record<string, string>;
+    sender_id: string;
+    type: string;
+    created_at: string;
+  } | null;
+}
+
+interface RawConversationMember {
+  conversation_id: string;
+  user_id: string;
+}
+
+export function getMessageBody(message: Pick<ConversationSummary["last_message"], "ciphertext"> | { ciphertext: string }) {
+  return message.ciphertext ?? "";
+}
+
+export function getConversationPreview(lastMessage: ConversationSummary["last_message"]) {
+  if (!lastMessage) return "Say hi";
+  if (lastMessage.type === "text") return getMessageBody(lastMessage) || "Say hi";
+  return lastMessage.type === "image" ? "Photo" : "Voice note";
+}
+
+export async function listUnreadCounts(userId: string): Promise<Record<string, number>> {
+  if (!userId) return {};
+
+  const { data: memberships, error: membershipError } = await supabase
+    .from("conversation_members")
+    .select("conversation_id, last_read_at")
+    .eq("user_id", userId);
+  if (membershipError) throw membershipError;
+
+  const conversationIds = (memberships ?? []).map((membership) => membership.conversation_id);
+  if (conversationIds.length === 0) return {};
+
+  const lastReadAtByConversation = new Map(
+    (memberships ?? []).map((membership) => [membership.conversation_id, membership.last_read_at ?? null]),
+  );
+
+  const { data: messages, error: messageError } = await supabase
+    .from("messages")
+    .select("conversation_id, sender_id, created_at")
+    .in("conversation_id", conversationIds)
+    .neq("sender_id", userId);
+  if (messageError) throw messageError;
+
+  return (messages ?? []).reduce<Record<string, number>>((acc, message) => {
+    const lastReadAt = lastReadAtByConversation.get(message.conversation_id);
+    if (!lastReadAt || new Date(message.created_at).getTime() > new Date(lastReadAt).getTime()) {
+      acc[message.conversation_id] = (acc[message.conversation_id] || 0) + 1;
+    }
+    return acc;
+  }, {});
+}
+
+export async function markConversationRead(
+  conversationId: string,
+  userId: string,
+  messages: { id: string; sender_id: string; created_at: string }[],
+  lastReadAt?: string | null,
+) {
+  const latestIncomingMessage = [...messages]
+    .reverse()
+    .find((message) => message.sender_id !== userId);
+
+  if (!latestIncomingMessage) return lastReadAt ?? null;
+
+  if (lastReadAt && new Date(latestIncomingMessage.created_at).getTime() <= new Date(lastReadAt).getTime()) {
+    return lastReadAt;
+  }
+
+  const nextLastReadAt = latestIncomingMessage.created_at;
+
+  const { error: memberError } = await supabase
+    .from("conversation_members")
+    .update({ last_read_at: nextLastReadAt })
+    .eq("conversation_id", conversationId)
+    .eq("user_id", userId);
+  if (memberError) throw memberError;
+
+  const { error: receiptError } = await supabase.from("read_receipts").insert({
+    message_id: latestIncomingMessage.id,
+    user_id: userId,
+  });
+
+  if (receiptError && receiptError.code !== "23505") {
+    throw receiptError;
+  }
+
+  return nextLastReadAt;
+}
+
+function mapConversationMember(
+  member: RawConversationMember,
+  profileById: Map<string, { username: string; display_name: string | null; avatar_url: string | null }>,
+) {
+  const profile = profileById.get(member.user_id);
+  return {
+    user_id: member.user_id,
+    username: profile?.username ?? "unknown",
+    display_name: profile?.display_name ?? null,
+    avatar_url: profile?.avatar_url ?? null,
+  };
 }
 
 export async function listConversations(userId: string): Promise<ConversationSummary[]> {
-  const { data: memberRows, error } = await supabase
+  if (!userId) return [];
+
+  const { data: memberRows, error: memberError } = await supabase
     .from("conversation_members")
     .select("conversation_id")
     .eq("user_id", userId);
-  if (error) throw error;
-  const ids = (memberRows ?? []).map((r) => r.conversation_id);
-  if (ids.length === 0) return [];
+  if (memberError) throw memberError;
 
-  const { data: convs } = await supabase
+  const conversationIds = (memberRows ?? []).map((row) => row.conversation_id);
+  if (conversationIds.length === 0) return [];
+
+  const { data: conversations, error: conversationError } = await supabase
     .from("conversations")
     .select("id, type, name, avatar_url, disappearing_seconds, updated_at")
-    .in("id", ids)
+    .in("id", conversationIds)
     .order("updated_at", { ascending: false });
+  if (conversationError) throw conversationError;
 
-  const { data: allMembers } = await supabase
+  const { data: allMembers, error: allMembersError } = await supabase
     .from("conversation_members")
-    .select("conversation_id, user_id, profiles!inner(username, display_name, avatar_url)")
-    .in("conversation_id", ids);
+    .select("conversation_id, user_id")
+    .in("conversation_id", conversationIds);
+  if (allMembersError) throw allMembersError;
 
-  const { data: lastMsgs } = await supabase
+  const memberUserIds = Array.from(new Set((allMembers ?? []).map((member) => member.user_id)));
+  let profileById = new Map<string, { username: string; display_name: string | null; avatar_url: string | null }>();
+
+  if (memberUserIds.length > 0) {
+    const { data: profiles, error: profileError } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url")
+      .in("id", memberUserIds);
+    if (profileError) throw profileError;
+
+    profileById = new Map(
+      (profiles ?? []).map((profile) => [
+        profile.id,
+        {
+          username: profile.username,
+          display_name: profile.display_name,
+          avatar_url: profile.avatar_url,
+        },
+      ]),
+    );
+  }
+
+  const { data: lastMessages, error: lastMessagesError } = await supabase
     .from("messages")
     .select("conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, created_at")
-    .in("conversation_id", ids)
+    .in("conversation_id", conversationIds)
     .order("created_at", { ascending: false });
+  if (lastMessagesError) throw lastMessagesError;
 
-  const lastByConv = new Map<string, ConversationSummary["last_message"]>();
-  for (const m of lastMsgs ?? []) {
-    if (!lastByConv.has(m.conversation_id)) {
-      lastByConv.set(m.conversation_id, {
-        ciphertext: m.ciphertext,
-        nonce: m.nonce,
-        recipient_keys: m.recipient_keys as Record<string, string>,
-        sender_id: m.sender_id,
-        type: m.type,
-        created_at: m.created_at,
+  const lastMessageByConversation = new Map<string, ConversationSummary["last_message"]>();
+  for (const message of lastMessages ?? []) {
+    if (!lastMessageByConversation.has(message.conversation_id)) {
+      lastMessageByConversation.set(message.conversation_id, {
+        ciphertext: message.ciphertext,
+        nonce: message.nonce,
+        recipient_keys: message.recipient_keys as Record<string, string>,
+        sender_id: message.sender_id,
+        type: message.type,
+        created_at: message.created_at,
       });
     }
   }
 
-  return (convs ?? []).map((c) => ({
-    ...c,
-    type: c.type as "dm" | "group",
-    members: (allMembers ?? [])
-      .filter((m) => m.conversation_id === c.id)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map((m: any) => ({
-        user_id: m.user_id,
-        username: m.profiles.username,
-        display_name: m.profiles.display_name,
-        avatar_url: m.profiles.avatar_url,
-      })),
-    last_message: lastByConv.get(c.id) ?? null,
+  const membersByConversation = new Map<string, ConversationSummary["members"]>();
+  for (const member of (allMembers ?? []) as RawConversationMember[]) {
+    const mappedMember = mapConversationMember(member, profileById);
+    const existing = membersByConversation.get(member.conversation_id) ?? [];
+    existing.push(mappedMember);
+    membersByConversation.set(member.conversation_id, existing);
+  }
+
+  return (conversations ?? []).map((conversation) => ({
+    ...conversation,
+    type: conversation.type as "dm" | "group",
+    members: membersByConversation.get(conversation.id) ?? [],
+    last_message: lastMessageByConversation.get(conversation.id) ?? null,
   }));
 }
 
 export async function findOrCreateDM(myId: string, otherId: string): Promise<string> {
-  const { data: mine } = await supabase
+  if (!myId || !otherId) throw new Error("Missing user id");
+
+  const { data: mine, error: mineError } = await supabase
     .from("conversation_members")
     .select("conversation_id, conversations!inner(type)")
     .eq("user_id", myId);
+  if (mineError) throw mineError;
 
   const dmIds = (mine ?? [])
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((r: any) => r.conversations.type === "dm")
-    .map((r) => r.conversation_id);
+    .filter((row: any) => row.conversations.type === "dm")
+    .map((row) => row.conversation_id);
 
   if (dmIds.length > 0) {
-    const { data: other } = await supabase
+    const { data: other, error: otherError } = await supabase
       .from("conversation_members")
       .select("conversation_id")
       .eq("user_id", otherId)
       .in("conversation_id", dmIds);
+    if (otherError) throw otherError;
     if (other && other.length > 0) return other[0].conversation_id;
   }
 
   const conversationId = crypto.randomUUID();
-  const { error } = await supabase
+  const { error: conversationError } = await supabase
     .from("conversations")
     .insert({ id: conversationId, type: "dm", created_by: myId });
-  if (error) throw error;
+  if (conversationError) throw conversationError;
 
-  const { error: memErr } = await supabase
-    .from("conversation_members")
-    .insert([
-      { conversation_id: conversationId, user_id: myId, role: "member" },
-      { conversation_id: conversationId, user_id: otherId, role: "member" },
-    ]);
-  if (memErr) throw memErr;
+  const { error: memberError } = await supabase.from("conversation_members").insert([
+    { conversation_id: conversationId, user_id: myId, role: "member" },
+    { conversation_id: conversationId, user_id: otherId, role: "member" },
+  ]);
+  if (memberError) throw memberError;
+
   return conversationId;
 }
 
 export async function createGroup(myId: string, name: string, memberIds: string[]) {
+  if (!myId) throw new Error("Missing user id");
+
+  const uniqueMemberIds = Array.from(new Set(memberIds.filter(Boolean))).filter((id) => id !== myId);
   const conversationId = crypto.randomUUID();
-  const { error } = await supabase
+
+  const { error: conversationError } = await supabase
     .from("conversations")
-    .insert({ id: conversationId, type: "group", name, created_by: myId });
-  if (error) throw error;
-  const rows = [{ conversation_id: conversationId, user_id: myId, role: "owner" }, ...memberIds.map((u) => ({ conversation_id: conversationId, user_id: u, role: "member" }))];
-  const { error: memErr } = await supabase.from("conversation_members").insert(rows);
-  if (memErr) throw memErr;
+    .insert({ id: conversationId, type: "group", name: name.trim(), created_by: myId });
+  if (conversationError) throw conversationError;
+
+  const rows = [
+    { conversation_id: conversationId, user_id: myId, role: "owner" },
+    ...uniqueMemberIds.map((memberId) => ({
+      conversation_id: conversationId,
+      user_id: memberId,
+      role: "member",
+    })),
+  ];
+  const { error: memberError } = await supabase.from("conversation_members").insert(rows);
+  if (memberError) throw memberError;
+
   return conversationId;
 }
 
@@ -121,61 +278,59 @@ interface SendOptions {
   type: "text" | "image" | "voice";
   text?: string;
   blob?: Blob;
-  blobMime?: string;
   replyTo?: string | null;
   expiresInSec?: number | null;
 }
 
 export async function sendMessage(opts: SendOptions) {
-  let ciphertext = opts.text ?? "";
-  let mediaPath: string | null = null;
-
-  if (opts.type !== "text") {
-    if (!opts.blob) throw new Error("blob required");
-    const ext = opts.type === "image" ? "jpg" : "webm";
-    const filename = `${opts.senderId}/${crypto.randomUUID()}.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from("chat-media")
-      .upload(filename, opts.blob, {
-        contentType: opts.blob.type || (opts.type === "image" ? "image/jpeg" : "audio/webm"),
-      });
-    if (upErr) throw upErr;
-    mediaPath = filename;
-    ciphertext = "";
+  if (!opts.conversationId || !opts.senderId) {
+    throw new Error("Missing conversation or sender");
   }
 
-  const expires_at = opts.expiresInSec
+  let storedText = opts.text?.trim() ?? "";
+  let mediaPath: string | null = null;
+
+  if (opts.type === "text") {
+    if (!storedText) throw new Error("Message cannot be empty");
+  } else {
+    if (!opts.blob || opts.blob.size === 0) throw new Error("Media file is missing");
+    const ext = opts.type === "image" ? "jpg" : "webm";
+    const filename = `${opts.senderId}/${crypto.randomUUID()}.${ext}`;
+    const { error: uploadError } = await supabase.storage.from("chat-media").upload(filename, opts.blob, {
+      contentType: opts.blob.type || (opts.type === "image" ? "image/jpeg" : "audio/webm"),
+    });
+    if (uploadError) throw uploadError;
+    mediaPath = filename;
+    storedText = "";
+  }
+
+  const expiresAt = opts.expiresInSec
     ? new Date(Date.now() + opts.expiresInSec * 1000).toISOString()
     : null;
 
-  const { error } = await supabase.from("messages").insert({
+  const { error: messageError } = await supabase.from("messages").insert({
     conversation_id: opts.conversationId,
     sender_id: opts.senderId,
     type: opts.type,
-    ciphertext,
+    ciphertext: storedText,
     nonce: "",
     recipient_keys: {},
     media_path: mediaPath,
     reply_to: opts.replyTo ?? null,
-    expires_at,
+    expires_at: expiresAt,
   });
-  if (error) throw error;
+  if (messageError) throw messageError;
 
-  await supabase
+  const { error: conversationError } = await supabase
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", opts.conversationId);
+  if (conversationError) throw conversationError;
 }
 
-export async function getMessageText(
-  msg: { ciphertext: string },
-): Promise<string | null> {
-  return msg.ciphertext ?? null;
-}
+export async function downloadMedia(mediaPath: string): Promise<Blob | null> {
+  if (!mediaPath) return null;
 
-export async function downloadMedia(
-  mediaPath: string,
-): Promise<Blob | null> {
   const { data, error } = await supabase.storage.from("chat-media").download(mediaPath);
   if (error || !data) return null;
   return data;

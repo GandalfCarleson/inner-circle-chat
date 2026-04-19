@@ -1,7 +1,11 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
-import { usernameToEmail, isValidUsername } from "@/lib/auth-helpers";
+import {
+  normalizeUsername,
+  usernameToEmail,
+  isValidUsername,
+} from "@/lib/auth-helpers";
 
 export interface Profile {
   id: string;
@@ -24,6 +28,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+async function fetchProfile(userId: string): Promise<Profile | null> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url, bio")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as Profile | null) ?? null;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -31,46 +46,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, sess) => {
-      setSession(sess);
-      setUser(sess?.user ?? null);
-      if (sess?.user) {
-        setTimeout(() => loadProfile(sess.user.id), 0);
-      } else {
+    let active = true;
+
+    async function syncFromSession(nextSession: Session | null) {
+      const nextUser = nextSession?.user ?? null;
+      setSession(nextSession);
+      setUser(nextUser);
+
+      if (!nextUser) {
         setProfile(null);
+        if (active) setLoading(false);
+        return;
       }
+
+      try {
+        const nextProfile = await fetchProfile(nextUser.id);
+        if (active) setProfile(nextProfile);
+      } catch (error) {
+        console.error("Failed to load profile", error);
+        if (active) setProfile(null);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void syncFromSession(nextSession);
     });
 
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      if (data.session?.user) loadProfile(data.session.user.id);
-      setLoading(false);
-    });
+    void supabase.auth.getSession().then(({ data }) => syncFromSession(data.session));
 
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
   }, []);
 
-  async function loadProfile(uid: string) {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, username, display_name, avatar_url, bio")
-      .eq("id", uid)
-      .maybeSingle();
-    if (data) setProfile(data as Profile);
-  }
-
   async function refreshProfile() {
-    if (user) await loadProfile(user.id);
+    if (!user) return;
+    setProfile(await fetchProfile(user.id));
   }
 
   async function signUp(username: string, password: string, displayName?: string) {
-    if (!isValidUsername(username)) {
+    const normalizedUsername = normalizeUsername(username);
+    if (!isValidUsername(normalizedUsername)) {
       throw new Error("Username must be 3-24 chars: letters, numbers, underscore.");
     }
     if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-
-    const normalizedUsername = username.toLowerCase();
 
     const { data: existing } = await supabase
       .from("profiles")
@@ -86,41 +108,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         emailRedirectTo: window.location.origin,
         data: {
           username: normalizedUsername,
-          display_name: displayName || username,
+          display_name: displayName?.trim() || normalizedUsername,
         },
       },
     });
+
     if (error) {
       if (/rate limit/i.test(error.message)) {
         throw new Error("Too many signup attempts. Wait a minute and try again.");
       }
       if (/email signups are disabled/i.test(error.message)) {
-        throw new Error("Email signup is disabled in Supabase. Enable the Email provider but keep Confirm email turned off.");
+        throw new Error(
+          "Email signup is disabled in Supabase. Enable the Email provider but keep Confirm email turned off.",
+        );
       }
       if (/redirect/i.test(error.message)) {
-        throw new Error("Your Supabase redirect URL settings are blocking signup. Add your local app URL to Auth redirect URLs.");
+        throw new Error(
+          "Your Supabase redirect URL settings are blocking signup. Add your local app URL to Auth redirect URLs.",
+        );
       }
       throw new Error(`Signup failed: ${error.message}`);
     }
+
     if (!data.user) throw new Error("Signup failed.");
   }
 
   async function signIn(username: string, password: string) {
+    const normalizedUsername = normalizeUsername(username);
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(username.toLowerCase()),
+      email: usernameToEmail(normalizedUsername),
       password,
     });
+
     if (error) {
       if (/email not confirmed/i.test(error.message)) {
-        throw new Error("This project still requires email confirmation. Disable it in Supabase Auth settings.");
+        throw new Error(
+          "This project still requires email confirmation. Disable it in Supabase Auth settings.",
+        );
       }
       throw new Error("Invalid username or password.");
     }
+
     if (!data.user) throw new Error("Sign in failed.");
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
   }
 
   return (
