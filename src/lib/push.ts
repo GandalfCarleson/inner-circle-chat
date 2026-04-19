@@ -95,7 +95,11 @@ async function registerForPushToken() {
       registrationErrorHandle = await PushNotifications.addListener("registrationError", async (error) => {
         window.clearTimeout(timeout);
         await cleanup();
-        reject(new Error(error.error));
+        const message =
+          typeof error.error === "string"
+            ? error.error
+            : JSON.stringify(error.error ?? error ?? "Unknown push registration error");
+        reject(new Error(message));
       });
 
       await PushNotifications.register();

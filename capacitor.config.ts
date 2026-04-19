@@ -17,7 +17,7 @@ const config: CapacitorConfig = {
       resizeOnFullScreen: true,
     },
     SplashScreen: {
-      launchShowDuration: 600,
+      launchShowDuration: 2000,
       backgroundColor: '#1F313B',
       showSpinner: false,
       splashFullScreen: true,

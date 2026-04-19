@@ -5,6 +5,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isNativeApp } from "@/lib/native";
 import { registerAndStorePushToken } from "@/lib/push";
 
+const PUSH_ENABLED_IN_DEV = import.meta.env.VITE_ENABLE_PUSH_IN_DEV === "true";
+const CAN_REGISTER_PUSH = !import.meta.env.DEV || PUSH_ENABLED_IN_DEV;
+
 function readConversationIdFromNotification(
   notification: { data?: Record<string, unknown> | null } | null | undefined,
 ) {
@@ -19,16 +22,19 @@ export function usePushNotifications() {
   const registeredForUserRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!CAN_REGISTER_PUSH) return;
     if (!user || !isNativeApp()) return;
     if (registeredForUserRef.current === user.id) return;
     registeredForUserRef.current = user.id;
 
     void registerAndStorePushToken(user.id).catch((error) => {
-      console.error("Push registration failed", error);
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      console.error("Push registration failed", message);
     });
   }, [user]);
 
   useEffect(() => {
+    if (!CAN_REGISTER_PUSH) return;
     if (!isNativeApp()) return;
 
     let active = true;
