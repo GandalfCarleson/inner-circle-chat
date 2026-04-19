@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "npm run build:mobile",
+    "build:mobile": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "cap:sync": "node scripts/prepare-capacitor.mjs && npx cap sync",
-    "cap:build": "npm run build && npm run cap:sync",
-    "cap:open:ios": "npx cap open ios",
-    "cap:open:android": "npx cap open android",
+    "cap:sync": "npx cap sync",
+    "cap:ios": "npx cap open ios",
+    "cap:android": "npx cap open android",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

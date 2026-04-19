@@ -1,10 +1,8 @@
-import { Outlet, Link, createRootRoute, HeadContent, Scripts, useRouter } from "@tanstack/react-router";
+import { Outlet, Link, createRootRoute, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { initializeNativeShell } from "@/lib/native";
-
-import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
   return (
@@ -24,38 +22,9 @@ function NotFoundComponent() {
 }
 
 export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-      { name: "theme-color", content: "#1f313b" },
-      { title: "Halo - private messaging for friend groups" },
-      { name: "description", content: "Messaging built for real friend groups. No ads, no tracking, no data selling." },
-      { property: "og:title", content: "Halo - private messaging for friend groups" },
-      { property: "og:description", content: "Chat, group rooms, and disappearing messages without the noise." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
-    ],
-    links: [{ rel: "stylesheet", href: appCss }],
-  }),
-  shellComponent: RootShell,
-  component: RootComponent,
   notFoundComponent: NotFoundComponent,
+  component: RootComponent,
 });
-
-function RootShell({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body className="min-h-app">
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  );
-}
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();

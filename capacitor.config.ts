@@ -3,7 +3,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 const config: CapacitorConfig = {
   appId: 'com.halo.chat',
   appName: 'Halo',
-  webDir: 'dist/client',
+  webDir: 'dist-mobile',
   backgroundColor: '#1F313B',
   plugins: {
     StatusBar: {
