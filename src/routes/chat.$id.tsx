@@ -177,17 +177,19 @@ function ChatPage() {
   // Decrypt incoming messages
   useEffect(() => {
     if (!user || !profile?.public_key) return;
+    const myPub = profile.public_key;
+    const myId = user.id;
     let cancelled = false;
     (async () => {
       const next: Record<string, string> = { ...decrypted };
       const mediaNext: Record<string, string> = { ...mediaUrls };
       for (const m of messages) {
         if (m.type === "text" && next[m.id] === undefined) {
-          const t = await decryptMessageText(m, user.id, profile.public_key);
+          const t = await decryptMessageText(m, myId, myPub);
           next[m.id] = t ?? "🔒 Unable to decrypt";
         } else if ((m.type === "image" || m.type === "voice") && m.media_path && !mediaNext[m.id]) {
           const mime = m.type === "image" ? "image/jpeg" : "audio/webm";
-          const blob = await downloadAndDecryptMedia(m.media_path, m, user.id, profile.public_key, mime);
+          const blob = await downloadAndDecryptMedia(m.media_path, m, myId, myPub, mime);
           if (blob) mediaNext[m.id] = URL.createObjectURL(blob);
         }
       }
