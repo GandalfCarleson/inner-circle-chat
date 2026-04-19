@@ -104,6 +104,15 @@ AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION public.is_conversation_creator(_conv UUID, _user UUID)
+RETURNS BOOLEAN LANGUAGE SQL STABLE SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.conversations
+    WHERE id = _conv AND created_by = _user
+  );
+$$;
+
 -- conversations policies
 CREATE POLICY "Members can view conversations"
   ON public.conversations FOR SELECT TO authenticated
@@ -130,7 +139,7 @@ CREATE POLICY "Add self or by creator"
   ON public.conversation_members FOR INSERT TO authenticated
   WITH CHECK (
     user_id = auth.uid() OR
-    EXISTS (SELECT 1 FROM public.conversations c WHERE c.id = conversation_id AND c.created_by = auth.uid())
+    public.is_conversation_creator(conversation_id, auth.uid())
   );
 
 CREATE POLICY "Update own membership"

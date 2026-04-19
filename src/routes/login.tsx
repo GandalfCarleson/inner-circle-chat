@@ -37,7 +37,9 @@ function LoginPage() {
             <Sparkles className="h-7 w-7 text-primary-foreground" />
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Welcome back to Halo</h1>
-          <p className="text-sm text-muted-foreground">Private messaging for your circle.</p>
+          <p className="text-center text-sm text-muted-foreground">
+            Sign in with your username and password.
+          </p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-3 rounded-2xl border border-border bg-card p-5 shadow-xl">

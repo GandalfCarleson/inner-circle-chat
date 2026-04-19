@@ -3,28 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  decryptMessageText,
-  downloadAndDecryptMedia,
-  sendMessage,
-} from "@/lib/messaging";
-import {
-  ArrowLeft,
-  Send,
-  Image as ImageIcon,
-  Mic,
-  Smile,
-  X,
-  Reply,
-  Timer,
-  Trash2,
-} from "lucide-react";
+import { downloadMedia, sendMessage } from "@/lib/messaging";
+import { ArrowLeft, Send, Image as ImageIcon, Mic, Smile, X, Reply, Timer, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/chat/$id")({
   head: () => ({
-    meta: [{ title: "Chat — Halo" }],
+    meta: [{ title: "Chat - Halo" }],
   }),
   component: ChatPage,
 });
@@ -34,7 +20,6 @@ interface MemberInfo {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  public_key: string | null;
 }
 
 interface MessageRow {
@@ -55,11 +40,10 @@ const QUICK_EMOJIS = ["❤️", "😂", "🔥", "👍", "😮", "😢"];
 
 function ChatPage() {
   const { id: convId } = useParams({ from: "/chat/$id" });
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [convMeta, setConvMeta] = useState<{ name: string | null; type: string; disappearing_seconds: number | null } | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
-  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [reactions, setReactions] = useState<Record<string, { emoji: string; user_id: string }[]>>({});
   const [text, setText] = useState("");
@@ -72,7 +56,6 @@ function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load conversation + members
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -90,7 +73,7 @@ function ChatPage() {
 
       const { data: m } = await supabase
         .from("conversation_members")
-        .select("user_id, profiles!inner(username, display_name, avatar_url, public_key)")
+        .select("user_id, profiles!inner(username, display_name, avatar_url)")
         .eq("conversation_id", convId);
       if (cancelled) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,7 +82,6 @@ function ChatPage() {
         username: r.profiles.username,
         display_name: r.profiles.display_name,
         avatar_url: r.profiles.avatar_url,
-        public_key: r.profiles.public_key,
       }));
       setMembers(mems);
     })();
@@ -108,7 +90,6 @@ function ChatPage() {
     };
   }, [convId, user]);
 
-  // Load messages
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
@@ -128,9 +109,7 @@ function ChatPage() {
         .in("message_id", (data ?? []).map((d) => d.id));
       if (cancelled) return;
       const map: Record<string, { emoji: string; user_id: string }[]> = {};
-      for (const r of rx ?? []) {
-        (map[r.message_id] ||= []).push({ emoji: r.emoji, user_id: r.user_id });
-      }
+      for (const r of rx ?? []) (map[r.message_id] ||= []).push({ emoji: r.emoji, user_id: r.user_id });
       setReactions(map);
     })();
     return () => {
@@ -138,7 +117,6 @@ function ChatPage() {
     };
   }, [convId, user]);
 
-  // Realtime subscriptions
   useEffect(() => {
     if (!user) return;
     const ch = supabase
@@ -153,63 +131,46 @@ function ChatPage() {
         { event: "DELETE", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` },
         (payload) => setMessages((prev) => prev.filter((m) => m.id !== (payload.old as MessageRow).id)),
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "message_reactions" },
-        async () => {
-          const ids = messages.map((m) => m.id);
-          if (ids.length === 0) return;
-          const { data: rx } = await supabase
-            .from("message_reactions")
-            .select("message_id, user_id, emoji")
-            .in("message_id", ids);
-          const map: Record<string, { emoji: string; user_id: string }[]> = {};
-          for (const r of rx ?? []) (map[r.message_id] ||= []).push({ emoji: r.emoji, user_id: r.user_id });
-          setReactions(map);
-        },
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "message_reactions" }, async () => {
+        const ids = messages.map((m) => m.id);
+        if (ids.length === 0) return;
+        const { data: rx } = await supabase
+          .from("message_reactions")
+          .select("message_id, user_id, emoji")
+          .in("message_id", ids);
+        const map: Record<string, { emoji: string; user_id: string }[]> = {};
+        for (const r of rx ?? []) (map[r.message_id] ||= []).push({ emoji: r.emoji, user_id: r.user_id });
+        setReactions(map);
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(ch);
     };
   }, [convId, user, messages]);
 
-  // Decrypt incoming messages
   useEffect(() => {
-    if (!user || !profile?.public_key) return;
-    const myPub = profile.public_key;
-    const myId = user.id;
+    if (!user) return;
     let cancelled = false;
     (async () => {
-      const next: Record<string, string> = { ...decrypted };
       const mediaNext: Record<string, string> = { ...mediaUrls };
       for (const m of messages) {
-        if (m.type === "text" && next[m.id] === undefined) {
-          const t = await decryptMessageText(m, myId, myPub);
-          next[m.id] = t ?? "🔒 Unable to decrypt";
-        } else if ((m.type === "image" || m.type === "voice") && m.media_path && !mediaNext[m.id]) {
+        if ((m.type === "image" || m.type === "voice") && m.media_path && !mediaNext[m.id]) {
           const mime = m.type === "image" ? "image/jpeg" : "audio/webm";
-          const blob = await downloadAndDecryptMedia(m.media_path, m, myId, myPub, mime);
+          const blob = await downloadMedia(m.media_path);
           if (blob) mediaNext[m.id] = URL.createObjectURL(blob);
         }
       }
-      if (!cancelled) {
-        setDecrypted(next);
-        setMediaUrls(mediaNext);
-      }
+      if (!cancelled) setMediaUrls(mediaNext);
     })();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, user, profile?.public_key]);
+  }, [messages, user]);
 
-  // Auto scroll
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages.length]);
 
-  // Auto-delete expired messages periodically (client-side cleanup; server still has them until purged)
   useEffect(() => {
     const t = setInterval(() => {
       setMessages((prev) => prev.filter((m) => !m.expires_at || new Date(m.expires_at).getTime() > Date.now()));
@@ -217,16 +178,8 @@ function ChatPage() {
     return () => clearInterval(t);
   }, []);
 
-  const otherMembers = useMemo(
-    () => members.filter((m) => m.user_id !== user?.id),
-    [members, user?.id],
-  );
+  const otherMembers = useMemo(() => members.filter((m) => m.user_id !== user?.id), [members, user?.id]);
   const title = convMeta?.name || otherMembers.map((m) => m.display_name || m.username).join(", ") || "Chat";
-
-  const recipients = useMemo(
-    () => members.filter((m) => m.public_key).map((m) => ({ userId: m.user_id, publicKey: m.public_key as string })),
-    [members],
-  );
 
   async function handleSendText() {
     if (!text.trim() || !user) return;
@@ -236,7 +189,6 @@ function ChatPage() {
       await sendMessage({
         conversationId: convId,
         senderId: user.id,
-        recipients,
         type: "text",
         text: body,
         replyTo: replyTarget?.id ?? null,
@@ -255,7 +207,6 @@ function ChatPage() {
       await sendMessage({
         conversationId: convId,
         senderId: user.id,
-        recipients,
         type: "image",
         blob: file,
         replyTo: replyTarget?.id ?? null,
@@ -281,7 +232,6 @@ function ChatPage() {
           await sendMessage({
             conversationId: convId,
             senderId: user.id,
-            recipients,
             type: "voice",
             blob,
             expiresInSec: disappearing,
@@ -329,6 +279,10 @@ function ChatPage() {
     return members.find((m) => m.user_id === uid);
   }
 
+  function messageText(m: MessageRow) {
+    return m.ciphertext || "";
+  }
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <div className="hidden md:block">
@@ -336,7 +290,6 @@ function ChatPage() {
       </div>
 
       <main className="flex flex-1 flex-col">
-        {/* Header */}
         <header className="flex items-center gap-3 border-b border-border bg-card/40 px-3 py-3 backdrop-blur md:px-5">
           <Link to="/" className="rounded-full p-1.5 hover:bg-secondary md:hidden" aria-label="Back">
             <ArrowLeft className="h-5 w-5" />
@@ -347,7 +300,7 @@ function ChatPage() {
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-sm font-semibold">{title}</h1>
             <p className="truncate text-[11px] text-muted-foreground">
-              {convMeta?.type === "group" ? `${members.length} members` : "End-to-end encrypted"}
+              {convMeta?.type === "group" ? `${members.length} members` : "Direct message"}
             </p>
           </div>
           <div className="flex items-center gap-1">
@@ -364,13 +317,12 @@ function ChatPage() {
           </div>
         </header>
 
-        {/* Messages */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-4 md:px-6">
           <div className="mx-auto flex max-w-2xl flex-col gap-1.5">
             {messages.length === 0 && (
               <div className="mt-20 text-center text-sm text-muted-foreground">
                 <p>This is the start of your conversation.</p>
-                <p className="mt-1 text-xs">Messages are end-to-end encrypted.</p>
+                <p className="mt-1 text-xs">Send a message to get things moving.</p>
               </div>
             )}
             {messages.map((m, i) => {
@@ -395,33 +347,25 @@ function ChatPage() {
                           <p className="font-medium text-foreground/70">
                             {senderOf(replyMsg.sender_id)?.display_name || senderOf(replyMsg.sender_id)?.username}
                           </p>
-                          <p className="line-clamp-1">{decrypted[replyMsg.id] || "Media"}</p>
+                          <p className="line-clamp-1">{messageText(replyMsg) || "Media"}</p>
                         </div>
                       )}
                       <div
                         className={`relative rounded-2xl px-3.5 py-2 text-sm shadow-sm ${
-                          mine
-                            ? "bg-bubble-mine text-bubble-mine-foreground"
-                            : "bg-bubble-theirs text-bubble-theirs-foreground"
+                          mine ? "bg-bubble-mine text-bubble-mine-foreground" : "bg-bubble-theirs text-bubble-theirs-foreground"
                         }`}
                       >
-                        {m.type === "text" && (
-                          <p className="whitespace-pre-wrap break-words">
-                            {decrypted[m.id] ?? "…"}
-                          </p>
-                        )}
-                        {m.type === "image" && mediaUrls[m.id] && (
-                          <img src={mediaUrls[m.id]} alt="Sent" className="max-h-64 rounded-lg" />
-                        )}
+                        {m.type === "text" && <p className="whitespace-pre-wrap break-words">{messageText(m) || "..."}</p>}
+                        {m.type === "image" && mediaUrls[m.id] && <img src={mediaUrls[m.id]} alt="Sent" className="max-h-64 rounded-lg" />}
                         {m.type === "image" && !mediaUrls[m.id] && (
-                          <div className="flex h-32 w-48 items-center justify-center rounded-lg bg-black/20 text-xs">Decrypting…</div>
+                          <div className="flex h-32 w-48 items-center justify-center rounded-lg bg-black/20 text-xs">Loading...</div>
                         )}
                         {m.type === "voice" && mediaUrls[m.id] && (
                           // eslint-disable-next-line jsx-a11y/media-has-caption
                           <audio controls src={mediaUrls[m.id]} className="h-9" />
                         )}
                         {m.type === "voice" && !mediaUrls[m.id] && (
-                          <div className="flex h-9 w-40 items-center justify-center text-xs">Decrypting…</div>
+                          <div className="flex h-9 w-40 items-center justify-center text-xs">Loading...</div>
                         )}
                         {myReactions.length > 0 && (
                           <div className={`absolute -bottom-2 ${mine ? "left-2" : "right-2"} flex gap-0.5 rounded-full border border-border bg-card px-1.5 py-0.5 text-[11px] shadow-sm`}>
@@ -442,11 +386,7 @@ function ChatPage() {
                       {showEmojiFor === m.id && (
                         <div className={`absolute z-10 mt-1 flex gap-1 rounded-full border border-border bg-popover p-1 shadow-lg ${mine ? "right-0" : "left-0"}`}>
                           {QUICK_EMOJIS.map((e) => (
-                            <button
-                              key={e}
-                              onClick={() => toggleReaction(m.id, e)}
-                              className="rounded-full p-1 text-base transition hover:bg-secondary"
-                            >
+                            <button key={e} onClick={() => toggleReaction(m.id, e)} className="rounded-full p-1 text-base transition hover:bg-secondary">
                               {e}
                             </button>
                           ))}
@@ -454,28 +394,15 @@ function ChatPage() {
                       )}
                     </div>
 
-                    {/* Message actions */}
                     <div className="flex flex-col gap-0.5 opacity-0 transition group-hover:opacity-100">
-                      <button
-                        onClick={() => setShowEmojiFor(showEmojiFor === m.id ? null : m.id)}
-                        className="rounded-full p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                        aria-label="React"
-                      >
+                      <button onClick={() => setShowEmojiFor(showEmojiFor === m.id ? null : m.id)} className="rounded-full p-1 text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="React">
                         <Smile className="h-3.5 w-3.5" />
                       </button>
-                      <button
-                        onClick={() => setReplyTarget(m)}
-                        className="rounded-full p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
-                        aria-label="Reply"
-                      >
+                      <button onClick={() => setReplyTarget(m)} className="rounded-full p-1 text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Reply">
                         <Reply className="h-3.5 w-3.5" />
                       </button>
                       {mine && (
-                        <button
-                          onClick={() => deleteMessage(m.id)}
-                          className="rounded-full p-1 text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-                          aria-label="Delete"
-                        >
+                        <button onClick={() => deleteMessage(m.id)} className="rounded-full p-1 text-muted-foreground hover:bg-destructive/20 hover:text-destructive" aria-label="Delete">
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       )}
@@ -491,13 +418,12 @@ function ChatPage() {
           </div>
         </div>
 
-        {/* Reply chip */}
         {replyTarget && (
           <div className="border-t border-border bg-card/50 px-4 py-2">
             <div className="mx-auto flex max-w-2xl items-center gap-2">
               <Reply className="h-3.5 w-3.5 text-muted-foreground" />
               <p className="flex-1 truncate text-xs text-muted-foreground">
-                Replying to <span className="font-medium text-foreground">{senderOf(replyTarget.sender_id)?.display_name || senderOf(replyTarget.sender_id)?.username}</span>: {decrypted[replyTarget.id] || "media"}
+                Replying to <span className="font-medium text-foreground">{senderOf(replyTarget.sender_id)?.display_name || senderOf(replyTarget.sender_id)?.username}</span>: {messageText(replyTarget) || "media"}
               </p>
               <button onClick={() => setReplyTarget(null)} className="rounded-full p-1 hover:bg-secondary">
                 <X className="h-3.5 w-3.5" />
@@ -506,7 +432,6 @@ function ChatPage() {
           </div>
         )}
 
-        {/* Composer */}
         <div className="border-t border-border bg-card/30 px-3 py-3 md:px-6">
           <div className="mx-auto flex max-w-2xl items-end gap-2">
             <input
@@ -520,11 +445,7 @@ function ChatPage() {
                 e.target.value = "";
               }}
             />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="rounded-full p-2.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-              aria-label="Send image"
-            >
+            <button onClick={() => fileInputRef.current?.click()} className="rounded-full p-2.5 text-muted-foreground transition hover:bg-secondary hover:text-foreground" aria-label="Send image">
               <ImageIcon className="h-5 w-5" />
             </button>
             <div className="flex-1">
@@ -537,17 +458,13 @@ function ChatPage() {
                     handleSendText();
                   }
                 }}
-                placeholder="Message…"
+                placeholder="Message..."
                 rows={1}
                 className="max-h-32 w-full resize-none rounded-2xl border border-input bg-background px-4 py-2.5 text-sm outline-none ring-ring focus:ring-2"
               />
             </div>
             {text.trim() ? (
-              <button
-                onClick={handleSendText}
-                className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90"
-                aria-label="Send"
-              >
+              <button onClick={handleSendText} className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:bg-primary/90" aria-label="Send">
                 <Send className="h-4 w-4" />
               </button>
             ) : (
@@ -558,19 +475,15 @@ function ChatPage() {
                 onTouchStart={startRecording}
                 onTouchEnd={stopRecording}
                 className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
-                  recording
-                    ? "bg-destructive text-destructive-foreground"
-                    : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
+                  recording ? "bg-destructive text-destructive-foreground" : "bg-secondary text-secondary-foreground hover:bg-secondary/70"
                 }`}
-                aria-label={recording ? "Recording — release to send" : "Hold to record voice"}
+                aria-label={recording ? "Recording - release to send" : "Hold to record voice"}
               >
                 <Mic className="h-4 w-4" />
               </button>
             )}
           </div>
-          {recording && (
-            <p className="mt-2 text-center text-xs text-destructive">● Recording — release to send</p>
-          )}
+          {recording && <p className="mt-2 text-center text-xs text-destructive">● Recording - release to send</p>}
         </div>
       </main>
     </div>

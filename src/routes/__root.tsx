@@ -1,11 +1,4 @@
-import {
-  Outlet,
-  Link,
-  createRootRoute,
-  HeadContent,
-  Scripts,
-  useRouter,
-} from "@tanstack/react-router";
+import { Outlet, Link, createRootRoute, HeadContent, Scripts, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -18,14 +11,9 @@ function NotFoundComponent() {
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
         <h2 className="mt-4 text-xl font-semibold text-foreground">Lost in the void</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          This page slipped through the cracks.
-        </p>
+        <p className="mt-2 text-sm text-muted-foreground">This page slipped through the cracks.</p>
         <div className="mt-6">
-          <Link
-            to="/"
-            className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-          >
+          <Link to="/" className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
             Back home
           </Link>
         </div>
@@ -40,17 +28,10 @@ export const Route = createRootRoute({
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#1a1525" },
-      { title: "Halo — private messaging for friend groups" },
-      {
-        name: "description",
-        content:
-          "End-to-end encrypted messaging built for real friend groups. No ads, no tracking, no data selling.",
-      },
-      { property: "og:title", content: "Halo — private messaging for friend groups" },
-      {
-        property: "og:description",
-        content: "E2E encrypted chat, group rooms, and disappearing messages — without the noise.",
-      },
+      { title: "Halo - private messaging for friend groups" },
+      { name: "description", content: "Messaging built for real friend groups. No ads, no tracking, no data selling." },
+      { property: "og:title", content: "Halo - private messaging for friend groups" },
+      { property: "og:description", content: "Chat, group rooms, and disappearing messages without the noise." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],

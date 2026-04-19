@@ -1,6 +1,8 @@
 // Username-only auth: we shim a fake email so Supabase auth (which requires
 // email format) accepts username/password without ever exposing email to the user.
-const EMAIL_DOMAIN = "halo.local";
+// Use a reserved, syntactically valid domain instead of `.local`, which some
+// validators reject.
+const EMAIL_DOMAIN = "example.com";
 
 export function usernameToEmail(username: string): string {
   return `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`;

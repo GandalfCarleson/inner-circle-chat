@@ -1,13 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
-import {
-  generateKeypair,
-  getPrivateKey,
-  storePrivateKey,
-  clearKeys,
-  initCrypto,
-} from "@/lib/crypto";
 import { usernameToEmail, isValidUsername } from "@/lib/auth-helpers";
 
 export interface Profile {
@@ -15,7 +8,6 @@ export interface Profile {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  public_key: string | null;
   bio: string | null;
 }
 
@@ -39,7 +31,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    initCrypto();
     const { data: sub } = supabase.auth.onAuthStateChange((_evt, sess) => {
       setSession(sess);
       setUser(sess?.user ?? null);
@@ -63,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function loadProfile(uid: string) {
     const { data } = await supabase
       .from("profiles")
-      .select("id, username, display_name, avatar_url, public_key, bio")
+      .select("id, username, display_name, avatar_url, bio")
       .eq("id", uid)
       .maybeSingle();
     if (data) setProfile(data as Profile);
@@ -75,55 +66,60 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signUp(username: string, password: string, displayName?: string) {
     if (!isValidUsername(username)) {
-      throw new Error("Username must be 3–24 chars: letters, numbers, underscore.");
+      throw new Error("Username must be 3-24 chars: letters, numbers, underscore.");
     }
     if (password.length < 8) throw new Error("Password must be at least 8 characters.");
 
-    // Pre-check username uniqueness for a clean error
+    const normalizedUsername = username.toLowerCase();
+
     const { data: existing } = await supabase
       .from("profiles")
       .select("id")
-      .eq("username", username.toLowerCase())
+      .eq("username", normalizedUsername)
       .maybeSingle();
     if (existing) throw new Error("That username is taken.");
 
-    const kp = await generateKeypair();
-
     const { data, error } = await supabase.auth.signUp({
-      email: usernameToEmail(username),
+      email: usernameToEmail(normalizedUsername),
       password,
       options: {
         emailRedirectTo: window.location.origin,
         data: {
-          username: username.toLowerCase(),
+          username: normalizedUsername,
           display_name: displayName || username,
-          public_key: kp.publicKey,
         },
       },
     });
-    if (error) throw error;
+    if (error) {
+      if (/rate limit/i.test(error.message)) {
+        throw new Error("Too many signup attempts. Wait a minute and try again.");
+      }
+      if (/email signups are disabled/i.test(error.message)) {
+        throw new Error("Email signup is disabled in Supabase. Enable the Email provider but keep Confirm email turned off.");
+      }
+      if (/redirect/i.test(error.message)) {
+        throw new Error("Your Supabase redirect URL settings are blocking signup. Add your local app URL to Auth redirect URLs.");
+      }
+      throw new Error(`Signup failed: ${error.message}`);
+    }
     if (!data.user) throw new Error("Signup failed.");
-
-    await storePrivateKey(data.user.id, kp.privateKey);
   }
 
   async function signIn(username: string, password: string) {
     const { data, error } = await supabase.auth.signInWithPassword({
-      email: usernameToEmail(username),
+      email: usernameToEmail(username.toLowerCase()),
       password,
     });
-    if (error) throw new Error("Invalid username or password.");
-    if (!data.user) throw new Error("Sign in failed.");
-
-    // Verify private key exists locally; if not, the user lost it (E2EE trade-off).
-    const priv = await getPrivateKey(data.user.id);
-    if (!priv) {
-      console.warn("No local private key — old messages will be unreadable on this device.");
+    if (error) {
+      if (/email not confirmed/i.test(error.message)) {
+        throw new Error("This project still requires email confirmation. Disable it in Supabase Auth settings.");
+      }
+      throw new Error("Invalid username or password.");
     }
+    if (!data.user) throw new Error("Sign in failed.");
   }
 
   async function signOut() {
-    if (user) await clearKeys(user.id);
     await supabase.auth.signOut();
   }
 

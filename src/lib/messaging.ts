@@ -1,12 +1,4 @@
 import { supabase } from "@/integrations/supabase/client";
-import {
-  encryptForRecipients,
-  decryptForMe,
-  decryptText,
-  fileToBytes,
-  bytesToBlob,
-  getPrivateKey,
-} from "@/lib/crypto";
 
 export interface ConversationSummary {
   id: string;
@@ -15,12 +7,11 @@ export interface ConversationSummary {
   avatar_url: string | null;
   disappearing_seconds: number | null;
   updated_at: string;
-  members: { user_id: string; username: string; display_name: string | null; avatar_url: string | null; public_key: string | null }[];
+  members: { user_id: string; username: string; display_name: string | null; avatar_url: string | null }[];
   last_message?: { ciphertext: string; nonce: string; recipient_keys: Record<string, string>; sender_id: string; type: string; created_at: string } | null;
 }
 
 export async function listConversations(userId: string): Promise<ConversationSummary[]> {
-  // Get conversations the user is a member of
   const { data: memberRows, error } = await supabase
     .from("conversation_members")
     .select("conversation_id")
@@ -37,10 +28,9 @@ export async function listConversations(userId: string): Promise<ConversationSum
 
   const { data: allMembers } = await supabase
     .from("conversation_members")
-    .select("conversation_id, user_id, profiles!inner(username, display_name, avatar_url, public_key)")
+    .select("conversation_id, user_id, profiles!inner(username, display_name, avatar_url)")
     .in("conversation_id", ids);
 
-  // last messages
   const { data: lastMsgs } = await supabase
     .from("messages")
     .select("conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, created_at")
@@ -72,14 +62,12 @@ export async function listConversations(userId: string): Promise<ConversationSum
         username: m.profiles.username,
         display_name: m.profiles.display_name,
         avatar_url: m.profiles.avatar_url,
-        public_key: m.profiles.public_key,
       })),
     last_message: lastByConv.get(c.id) ?? null,
   }));
 }
 
 export async function findOrCreateDM(myId: string, otherId: string): Promise<string> {
-  // find a DM where both are members
   const { data: mine } = await supabase
     .from("conversation_members")
     .select("conversation_id, conversations!inner(type)")
@@ -99,41 +87,37 @@ export async function findOrCreateDM(myId: string, otherId: string): Promise<str
     if (other && other.length > 0) return other[0].conversation_id;
   }
 
-  // create new
-  const { data: conv, error } = await supabase
+  const conversationId = crypto.randomUUID();
+  const { error } = await supabase
     .from("conversations")
-    .insert({ type: "dm", created_by: myId })
-    .select("id")
-    .single();
-  if (error || !conv) throw error ?? new Error("Failed to create conversation");
+    .insert({ id: conversationId, type: "dm", created_by: myId });
+  if (error) throw error;
 
   const { error: memErr } = await supabase
     .from("conversation_members")
     .insert([
-      { conversation_id: conv.id, user_id: myId, role: "member" },
-      { conversation_id: conv.id, user_id: otherId, role: "member" },
+      { conversation_id: conversationId, user_id: myId, role: "member" },
+      { conversation_id: conversationId, user_id: otherId, role: "member" },
     ]);
   if (memErr) throw memErr;
-  return conv.id;
+  return conversationId;
 }
 
 export async function createGroup(myId: string, name: string, memberIds: string[]) {
-  const { data: conv, error } = await supabase
+  const conversationId = crypto.randomUUID();
+  const { error } = await supabase
     .from("conversations")
-    .insert({ type: "group", name, created_by: myId })
-    .select("id")
-    .single();
-  if (error || !conv) throw error ?? new Error("Failed");
-  const rows = [{ conversation_id: conv.id, user_id: myId, role: "owner" }, ...memberIds.map((u) => ({ conversation_id: conv.id, user_id: u, role: "member" }))];
+    .insert({ id: conversationId, type: "group", name, created_by: myId });
+  if (error) throw error;
+  const rows = [{ conversation_id: conversationId, user_id: myId, role: "owner" }, ...memberIds.map((u) => ({ conversation_id: conversationId, user_id: u, role: "member" }))];
   const { error: memErr } = await supabase.from("conversation_members").insert(rows);
   if (memErr) throw memErr;
-  return conv.id;
+  return conversationId;
 }
 
 interface SendOptions {
   conversationId: string;
   senderId: string;
-  recipients: { userId: string; publicKey: string }[];
   type: "text" | "image" | "voice";
   text?: string;
   blob?: Blob;
@@ -143,31 +127,21 @@ interface SendOptions {
 }
 
 export async function sendMessage(opts: SendOptions) {
-  let plaintext: Uint8Array;
+  let ciphertext = opts.text ?? "";
   let mediaPath: string | null = null;
 
-  if (opts.type === "text") {
-    plaintext = new TextEncoder().encode(opts.text ?? "");
-  } else {
-    if (!opts.blob) throw new Error("blob required");
-    plaintext = await fileToBytes(opts.blob);
-  }
-
-  const enc = await encryptForRecipients(plaintext, opts.recipients);
-
   if (opts.type !== "text") {
-    // Upload encrypted media
-    const filename = `${opts.senderId}/${crypto.randomUUID()}.bin`;
-    const cipherBytes = Uint8Array.from(atob(enc.ciphertext), (c) => c.charCodeAt(0));
-    const ab = new ArrayBuffer(cipherBytes.byteLength);
-    new Uint8Array(ab).set(cipherBytes);
+    if (!opts.blob) throw new Error("blob required");
+    const ext = opts.type === "image" ? "jpg" : "webm";
+    const filename = `${opts.senderId}/${crypto.randomUUID()}.${ext}`;
     const { error: upErr } = await supabase.storage
       .from("chat-media")
-      .upload(filename, new Blob([ab], { type: "application/octet-stream" }));
+      .upload(filename, opts.blob, {
+        contentType: opts.blob.type || (opts.type === "image" ? "image/jpeg" : "audio/webm"),
+      });
     if (upErr) throw upErr;
     mediaPath = filename;
-    // for media, we keep ciphertext empty placeholder + media_path
-    enc.ciphertext = "";
+    ciphertext = "";
   }
 
   const expires_at = opts.expiresInSec
@@ -178,51 +152,31 @@ export async function sendMessage(opts: SendOptions) {
     conversation_id: opts.conversationId,
     sender_id: opts.senderId,
     type: opts.type,
-    ciphertext: enc.ciphertext,
-    nonce: enc.nonce,
-    recipient_keys: enc.recipientKeys,
+    ciphertext,
+    nonce: "",
+    recipient_keys: {},
     media_path: mediaPath,
     reply_to: opts.replyTo ?? null,
     expires_at,
-    // include mime in recipient_keys hack? store mime in nonce? — better: stash on ciphertext as JSON when media
   });
   if (error) throw error;
 
-  // bump conversation updated_at
   await supabase
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", opts.conversationId);
 }
 
-export async function decryptMessageText(
-  msg: { ciphertext: string; nonce: string; recipient_keys: Record<string, string> },
-  myId: string,
-  myPublicKey: string,
+export async function getMessageText(
+  msg: { ciphertext: string },
 ): Promise<string | null> {
-  const myKey = msg.recipient_keys?.[myId];
-  if (!myKey) return null;
-  const priv = await getPrivateKey(myId);
-  if (!priv) return null;
-  return decryptText(msg.ciphertext, msg.nonce, myKey, myPublicKey, priv);
+  return msg.ciphertext ?? null;
 }
 
-export async function downloadAndDecryptMedia(
+export async function downloadMedia(
   mediaPath: string,
-  msg: { nonce: string; recipient_keys: Record<string, string> },
-  myId: string,
-  myPublicKey: string,
-  mime: string,
 ): Promise<Blob | null> {
   const { data, error } = await supabase.storage.from("chat-media").download(mediaPath);
   if (error || !data) return null;
-  const bytes = new Uint8Array(await data.arrayBuffer());
-  const ctB64 = btoa(String.fromCharCode(...bytes));
-  const myKey = msg.recipient_keys?.[myId];
-  if (!myKey) return null;
-  const priv = await getPrivateKey(myId);
-  if (!priv) return null;
-  const plain = await decryptForMe(ctB64, msg.nonce, myKey, myPublicKey, priv);
-  if (!plain) return null;
-  return bytesToBlob(plain, mime);
+  return data;
 }

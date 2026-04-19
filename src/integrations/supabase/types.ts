@@ -205,6 +205,9 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          private_key_box: string | null
+          private_key_nonce: string | null
+          private_key_salt: string | null
           public_key: string | null
           status: string | null
           updated_at: string
@@ -216,6 +219,9 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id: string
+          private_key_box?: string | null
+          private_key_nonce?: string | null
+          private_key_salt?: string | null
           public_key?: string | null
           status?: string | null
           updated_at?: string
@@ -227,6 +233,9 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          private_key_box?: string | null
+          private_key_nonce?: string | null
+          private_key_salt?: string | null
           public_key?: string | null
           status?: string | null
           updated_at?: string
@@ -265,6 +274,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_my_account: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
       is_conversation_member: {
         Args: { _conv: string; _user: string }
         Returns: boolean

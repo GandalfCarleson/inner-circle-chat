@@ -40,7 +40,7 @@ function SignupPage() {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Create your Halo</h1>
           <p className="text-center text-sm text-muted-foreground">
-            Just a username. No phone, no email.
+            Pick a username and password. No phone number required.
           </p>
         </div>
 
@@ -56,7 +56,7 @@ function SignupPage() {
               autoComplete="username"
               required
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">3–24 chars. Letters, numbers, _</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">3-24 chars. Letters, numbers, _</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">Display name (optional)</label>
@@ -78,17 +78,17 @@ function SignupPage() {
               required
               minLength={8}
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">Min 8 characters. No recovery — keep it safe.</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Min 8 characters.</p>
           </div>
           <button
             type="submit"
             disabled={busy}
             className="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
           >
-            {busy ? "Creating…" : "Create account"}
+            {busy ? "Creating..." : "Create account"}
           </button>
           <p className="text-center text-[11px] text-muted-foreground">
-            Your private encryption key is stored only on this device.
+            We do not ask for your personal email address.
           </p>
         </form>
 

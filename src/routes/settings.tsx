@@ -1,23 +1,25 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, TriangleAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
-    meta: [{ title: "Settings — Halo" }],
+    meta: [{ title: "Settings - Halo" }],
   }),
   component: SettingsPage,
 });
 
 function SettingsPage() {
-  const { profile, refreshProfile } = useAuth();
+  const { profile, refreshProfile, signOut } = useAuth();
+  const router = useRouter();
   const [displayName, setDisplayName] = useState(profile?.display_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function save() {
     if (!profile) return;
@@ -26,12 +28,33 @@ function SettingsPage() {
       .from("profiles")
       .update({ display_name: displayName, bio })
       .eq("id", profile.id);
-    if (error) toast.error(error.message);
-    else {
+    if (error) {
+      toast.error(error.message);
+    } else {
       toast.success("Saved");
       await refreshProfile();
     }
     setBusy(false);
+  }
+
+  async function deleteAccount() {
+    if (!profile || deleting) return;
+    const confirmed = window.confirm(
+      "Delete your account permanently? This removes your profile, friendships, conversations, and messages.",
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    const { error } = await supabase.rpc("delete_my_account");
+    if (error) {
+      toast.error(error.message);
+      setDeleting(false);
+      return;
+    }
+
+    await signOut();
+    router.navigate({ to: "/signup" });
+    toast.success("Account deleted");
   }
 
   return (
@@ -71,24 +94,26 @@ function SettingsPage() {
               disabled={busy}
               className="inline-flex items-center justify-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
             >
-              {busy ? "Saving…" : "Save"}
+              {busy ? "Saving..." : "Save"}
             </button>
           </div>
 
           <div className="mt-6 rounded-2xl border border-border bg-card p-5">
             <div className="mb-2 flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-success" />
-              <h2 className="text-sm font-semibold">Encryption</h2>
+              <TriangleAlert className="h-4 w-4 text-amber-500" />
+              <h2 className="text-sm font-semibold">Account</h2>
             </div>
             <p className="text-xs text-muted-foreground">
-              Your private key lives on this device only. If you sign out or clear browser
-              data, you lose access to past messages — there's no server-side recovery. That's
-              the point of E2EE.
+              Account deletion is permanent. Your profile, chats, friendships, and uploaded media are removed with the account.
             </p>
-            <div className="mt-3 break-all rounded-lg bg-background p-3 font-mono text-[10px] text-muted-foreground">
-              <span className="text-foreground/70">Public key: </span>
-              {profile?.public_key?.slice(0, 64)}…
-            </div>
+            <button
+              onClick={deleteAccount}
+              disabled={deleting}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-destructive px-4 py-2 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
+            >
+              <Trash2 className="h-4 w-4" />
+              {deleting ? "Deleting..." : "Delete account"}
+            </button>
           </div>
         </div>
       </main>

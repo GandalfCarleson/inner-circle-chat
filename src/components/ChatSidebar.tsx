@@ -1,7 +1,7 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { listConversations, type ConversationSummary, decryptMessageText } from "@/lib/messaging";
+import { listConversations, type ConversationSummary } from "@/lib/messaging";
 import { supabase } from "@/integrations/supabase/client";
 import { MessageCircle, Users, Settings, LogOut, Plus, Sparkles } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
@@ -22,38 +22,20 @@ export function ChatSidebar({ activeId }: Props) {
     let cancelled = false;
 
     async function load() {
-      if (!user) return;
       const list = await listConversations(user.id);
       if (cancelled) return;
       setConvs(list);
 
-      // decrypt previews
-      const myPub = profile?.public_key;
-      if (myPub) {
-        const next: Record<string, string> = {};
-        for (const c of list) {
-          if (!c.last_message) continue;
-          if (c.last_message.type !== "text") {
-            next[c.id] = c.last_message.type === "image" ? "📷 Photo" : "🎤 Voice";
-            continue;
-          }
-          const txt = await decryptMessageText(
-            {
-              ciphertext: c.last_message.ciphertext,
-              nonce: c.last_message.nonce,
-              recipient_keys: c.last_message.recipient_keys,
-            },
-            user.id,
-            myPub,
-          );
-          next[c.id] = txt ?? "🔒 Encrypted";
-        }
-        if (!cancelled) setPreviews(next);
+      const next: Record<string, string> = {};
+      for (const c of list) {
+        if (!c.last_message) continue;
+        if (c.last_message.type === "text") next[c.id] = c.last_message.ciphertext || "Say hi";
+        else next[c.id] = c.last_message.type === "image" ? "Photo" : "Voice";
       }
+      if (!cancelled) setPreviews(next);
     }
     load();
 
-    // pending friend requests
     supabase
       .from("friendships")
       .select("id", { count: "exact", head: true })
@@ -61,14 +43,9 @@ export function ChatSidebar({ activeId }: Props) {
       .eq("status", "pending")
       .then(({ count }) => !cancelled && setPendingFriends(count ?? 0));
 
-    // realtime: refresh on new messages
     const ch = supabase
       .channel("sidebar-messages")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => load(),
-      )
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => load())
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "conversation_members", filter: `user_id=eq.${user.id}` },
@@ -80,7 +57,7 @@ export function ChatSidebar({ activeId }: Props) {
       cancelled = true;
       supabase.removeChannel(ch);
     };
-  }, [user, profile?.public_key]);
+  }, [user]);
 
   function convTitle(c: ConversationSummary): string {
     if (c.name) return c.name;
@@ -95,8 +72,7 @@ export function ChatSidebar({ activeId }: Props) {
 
   return (
     <aside className="flex h-full w-full flex-col bg-rail text-rail-foreground md:w-80 md:border-r md:border-border">
-      {/* Brand header */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="flex items-center justify-between px-4 pb-3 pt-4">
         <Link to="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
@@ -117,7 +93,6 @@ export function ChatSidebar({ activeId }: Props) {
         </Link>
       </div>
 
-      {/* Conversations */}
       <div className="flex-1 overflow-y-auto px-2">
         {convs.length === 0 ? (
           <div className="mt-10 px-4 text-center text-sm text-muted-foreground">
@@ -161,7 +136,7 @@ export function ChatSidebar({ activeId }: Props) {
                         )}
                       </div>
                       <p className="truncate text-xs text-muted-foreground">
-                        {previews[c.id] ?? (c.last_message ? "🔒 Encrypted" : "Say hi")}
+                        {previews[c.id] ?? (c.last_message ? "Message" : "Say hi")}
                       </p>
                     </div>
                   </Link>
@@ -172,7 +147,6 @@ export function ChatSidebar({ activeId }: Props) {
         )}
       </div>
 
-      {/* User footer */}
       <div className="border-t border-border p-3">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent text-xs font-bold text-primary-foreground">
@@ -182,18 +156,10 @@ export function ChatSidebar({ activeId }: Props) {
             <p className="truncate text-sm font-medium">{profile?.display_name || profile?.username}</p>
             <p className="truncate text-[11px] text-muted-foreground">@{profile?.username}</p>
           </div>
-          <Link
-            to="/friends"
-            className="rounded-full p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-            aria-label="Friends"
-          >
+          <Link to="/friends" className="rounded-full p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground" aria-label="Friends">
             <Users className="h-4 w-4" />
           </Link>
-          <Link
-            to="/settings"
-            className="rounded-full p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
-            aria-label="Settings"
-          >
+          <Link to="/settings" className="rounded-full p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground" aria-label="Settings">
             <Settings className="h-4 w-4" />
           </Link>
           <button

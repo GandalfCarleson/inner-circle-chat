@@ -5,8 +5,8 @@ import { MessageCircle, Sparkles, ShieldCheck, Zap, Users } from "lucide-react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Halo — Your chats" },
-      { name: "description", content: "Private end-to-end encrypted messaging." },
+      { title: "Halo - Your chats" },
+      { name: "description", content: "Private messaging for your circle." },
     ],
   }),
   component: HomePage,
@@ -27,7 +27,7 @@ function HomePage() {
           </p>
 
           <div className="mt-8 grid grid-cols-1 gap-3 text-left sm:grid-cols-3">
-            <Feature icon={<ShieldCheck className="h-4 w-4" />} title="E2E encrypted" body="Only you and your friends can read." />
+            <Feature icon={<ShieldCheck className="h-4 w-4" />} title="Simple" body="Chat without setup drama." />
             <Feature icon={<Zap className="h-4 w-4" />} title="Instant" body="Real-time messages, no clutter." />
             <Feature icon={<Users className="h-4 w-4" />} title="Your circle" body="Built for real friend groups." />
           </div>
