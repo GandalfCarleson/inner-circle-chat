@@ -28,7 +28,8 @@ export function ChatSidebar({ activeId }: Props) {
       setConvs(list);
 
       // decrypt previews
-      if (profile?.public_key) {
+      const myPub = profile?.public_key;
+      if (myPub) {
         const next: Record<string, string> = {};
         for (const c of list) {
           if (!c.last_message) continue;
@@ -43,7 +44,7 @@ export function ChatSidebar({ activeId }: Props) {
               recipient_keys: c.last_message.recipient_keys,
             },
             user.id,
-            profile.public_key,
+            myPub,
           );
           next[c.id] = txt ?? "🔒 Encrypted";
         }
