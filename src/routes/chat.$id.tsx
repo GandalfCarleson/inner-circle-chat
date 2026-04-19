@@ -22,7 +22,7 @@ import { downloadMedia, getMessageBody, markConversationRead, sendMessage } from
 
 export const Route = createFileRoute("/chat/$id")({
   head: () => ({
-    meta: [{ title: "Chat - Halo" }],
+    meta: [{ title: "Chat - Void" }],
   }),
   component: ChatPage,
 });

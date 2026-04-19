@@ -9,7 +9,10 @@
     "build:mobile": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "assets:generate": "npx capacitor-assets generate --assetPath assets --android --ios",
     "cap:sync": "npx cap sync",
+    "cap:sync:ios": "npx cap sync ios",
+    "cap:sync:android": "npx cap sync android",
     "cap:ios": "npx cap open ios",
     "cap:android": "npx cap open android",
     "lint": "eslint .",
@@ -82,6 +85,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@eslint/js": "^9.32.0",
     "@lovable.dev/vite-tanstack-config": "^1.4.0",
     "@types/node": "^22.16.5",

@@ -128,7 +128,7 @@ export function ChatSidebar({ activeId }: Props) {
             to="/"
             className="premium-panel quiet-hover flex h-14 w-14 items-center justify-center rounded-[22px] text-[13px] font-semibold tracking-[0.26em] text-primary"
           >
-            VD
+            Void
           </Link>
           <Link to="/friends" className={navButtonClass} aria-label="Friends">
             <Users className="h-4 w-4" />

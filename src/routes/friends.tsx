@@ -10,7 +10,7 @@ import { findOrCreateDM } from "@/lib/messaging";
 
 export const Route = createFileRoute("/friends")({
   head: () => ({
-    meta: [{ title: "Friends - Halo" }],
+    meta: [{ title: "Friends - Void" }],
   }),
   component: FriendsPage,
 });

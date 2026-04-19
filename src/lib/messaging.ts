@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { dispatchNewMessagePush } from "@/lib/push";
 
 // Legacy schema note:
 // `ciphertext`, `nonce`, and `recipient_keys` are historical encryption-era columns.
@@ -308,17 +309,21 @@ export async function sendMessage(opts: SendOptions) {
     ? new Date(Date.now() + opts.expiresInSec * 1000).toISOString()
     : null;
 
-  const { error: messageError } = await supabase.from("messages").insert({
-    conversation_id: opts.conversationId,
-    sender_id: opts.senderId,
-    type: opts.type,
-    ciphertext: storedText,
-    nonce: "",
-    recipient_keys: {},
-    media_path: mediaPath,
-    reply_to: opts.replyTo ?? null,
-    expires_at: expiresAt,
-  });
+  const { data: insertedMessage, error: messageError } = await supabase
+    .from("messages")
+    .insert({
+      conversation_id: opts.conversationId,
+      sender_id: opts.senderId,
+      type: opts.type,
+      ciphertext: storedText,
+      nonce: "",
+      recipient_keys: {},
+      media_path: mediaPath,
+      reply_to: opts.replyTo ?? null,
+      expires_at: expiresAt,
+    })
+    .select("id")
+    .single();
   if (messageError) throw messageError;
 
   const { error: conversationError } = await supabase
@@ -326,6 +331,12 @@ export async function sendMessage(opts: SendOptions) {
     .update({ updated_at: new Date().toISOString() })
     .eq("id", opts.conversationId);
   if (conversationError) throw conversationError;
+
+  if (insertedMessage?.id) {
+    void dispatchNewMessagePush(insertedMessage.id).catch((error) => {
+      console.error("Push dispatch failed", error);
+    });
+  }
 }
 
 export async function downloadMedia(mediaPath: string): Promise<Blob | null> {

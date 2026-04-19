@@ -2,7 +2,6 @@ import { Capacitor } from "@capacitor/core";
 import { App } from "@capacitor/app";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { Keyboard } from "@capacitor/keyboard";
-import { PushNotifications } from "@capacitor/push-notifications";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
@@ -55,32 +54,5 @@ export async function triggerSelectionHaptic() {
     await Haptics.impact({ style: ImpactStyle.Light });
   } catch (error) {
     console.warn("Failed to trigger haptic feedback", error);
-  }
-}
-
-export async function preparePushNotifications() {
-  if (!isNativeApp()) return null;
-
-  try {
-    const permissionStatus = await PushNotifications.requestPermissions();
-    if (permissionStatus.receive !== "granted") {
-      console.info("Push permission not granted", permissionStatus);
-      return null;
-    }
-
-    await PushNotifications.register();
-
-    await PushNotifications.addListener("registration", (token) => {
-      console.info("Push registration token", token.value);
-    });
-
-    await PushNotifications.addListener("registrationError", (error) => {
-      console.error("Push registration error", error);
-    });
-
-    return permissionStatus.receive;
-  } catch (error) {
-    console.error("Failed to prepare push notifications", error);
-    return null;
   }
 }

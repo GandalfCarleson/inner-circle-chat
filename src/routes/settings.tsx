@@ -10,7 +10,7 @@ import { buildAvatarStoragePath, resolveAvatarUrl } from "@/lib/avatar";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
-    meta: [{ title: "Settings - Halo" }],
+    meta: [{ title: "Settings - Void" }],
   }),
   component: SettingsPage,
 });

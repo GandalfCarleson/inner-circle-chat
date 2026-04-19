@@ -21,7 +21,7 @@ function SignupPage() {
     setBusy(true);
     try {
       await signUp(username, password, displayName || username);
-      toast.success("Welcome to Halo");
+      toast.success("Welcome to Void");
       router.navigate({ to: "/" });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Signup failed");
@@ -38,7 +38,7 @@ function SignupPage() {
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/30">
             <Sparkles className="h-7 w-7 text-primary-foreground" />
           </div>
-          <h1 className="text-center text-2xl font-semibold tracking-tight">Create your Halo</h1>
+          <h1 className="text-center text-2xl font-semibold tracking-tight">Create your Void</h1>
           <p className="text-center text-sm leading-6 text-muted-foreground">
             Pick a username and password. No phone number required.
           </p>
@@ -93,7 +93,7 @@ function SignupPage() {
         </form>
 
         <p className="mt-4 text-center text-sm text-muted-foreground">
-          Already on Halo?{" "}
+          Already on Void?{" "}
           <Link to="/login" className="font-medium text-primary hover:underline">
             Sign in
           </Link>

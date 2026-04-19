@@ -5,7 +5,7 @@ import { MessageCircle, Sparkles, ShieldCheck, Zap, Users } from "lucide-react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Halo - Your chats" },
+      { title: "Void - Your chats" },
       { name: "description", content: "Private messaging for your circle." },
     ],
   }),
@@ -21,7 +21,7 @@ function HomePage() {
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/30">
             <Sparkles className="h-8 w-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight">Welcome to Halo</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Welcome to Void</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Pick a chat from the left, or start one with a friend.
           </p>

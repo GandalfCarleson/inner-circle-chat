@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Halo</string>
-    <string name="title_activity_main">Halo</string>
-    <string name="package_name">com.halo.chat</string>
-    <string name="custom_url_scheme">com.halo.chat</string>
+    <string name="app_name">Void</string>
+    <string name="title_activity_main">Void</string>
+    <string name="package_name">com.voideger.void</string>
+    <string name="custom_url_scheme">com.voideger.void</string>
 </resources>

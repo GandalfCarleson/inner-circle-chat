@@ -2,6 +2,7 @@ import { Outlet, Link, createRootRoute, useRouter } from "@tanstack/react-router
 import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { initializeNativeShell } from "@/lib/native";
 
 function NotFoundComponent() {
@@ -73,10 +74,16 @@ function RootComponent() {
 
   return (
     <AuthProvider>
+      <PushBootstrap />
       <AuthGate>
         <Outlet />
       </AuthGate>
       <Toaster theme="dark" position="top-center" richColors offset="calc(env(safe-area-inset-top) + 0.75rem)" />
     </AuthProvider>
   );
+}
+
+function PushBootstrap() {
+  usePushNotifications();
+  return null;
 }

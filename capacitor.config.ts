@@ -1,8 +1,8 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.halo.chat',
-  appName: 'Halo',
+  appId: 'com.voideger.void',
+  appName: 'Void',
   webDir: 'dist-mobile',
   backgroundColor: '#1F313B',
   plugins: {
