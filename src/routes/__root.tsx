@@ -1,6 +1,8 @@
 import { Outlet, Link, createRootRoute, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Toaster } from "sonner";
+import { CallLayer } from "@/components/calls/CallLayer";
+import { CallProvider } from "@/contexts/CallContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { initializeNativeShell } from "@/lib/native";
@@ -13,7 +15,10 @@ function NotFoundComponent() {
         <h2 className="mt-4 text-xl font-semibold text-foreground">Lost in the void</h2>
         <p className="mt-2 text-sm text-muted-foreground">This page slipped through the cracks.</p>
         <div className="mt-6">
-          <Link to="/" className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
             Back home
           </Link>
         </div>
@@ -75,10 +80,18 @@ function RootComponent() {
   return (
     <AuthProvider>
       <PushBootstrap />
-      <AuthGate>
-        <Outlet />
-      </AuthGate>
-      <Toaster theme="dark" position="top-center" richColors offset="calc(env(safe-area-inset-top) + 0.75rem)" />
+      <CallProvider>
+        <AuthGate>
+          <Outlet />
+        </AuthGate>
+        <CallLayer />
+      </CallProvider>
+      <Toaster
+        theme="dark"
+        position="top-center"
+        richColors
+        offset="calc(env(safe-area-inset-top) + 0.75rem)"
+      />
     </AuthProvider>
   );
 }

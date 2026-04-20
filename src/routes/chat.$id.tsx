@@ -6,16 +6,19 @@ import {
   Image as ImageIcon,
   Mic,
   MoreHorizontal,
+  Phone,
   Reply,
   Send,
   Smile,
   Timer,
   Trash2,
+  Video,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { useCallManager } from "@/contexts/CallContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadMedia, getMessageBody, markConversationRead, sendMessage } from "@/lib/messaging";
@@ -158,6 +161,7 @@ async function fetchReactionRows(messageIds: string[]) {
 function ChatPage() {
   const { id: convId } = useParams({ from: "/chat/$id" });
   const { user } = useAuth();
+  const { startOutgoingCall, isBusy } = useCallManager();
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [convMeta, setConvMeta] = useState<{
     name: string | null;
@@ -191,6 +195,8 @@ function ChatPage() {
       : otherMembers[0]
         ? `Private chat with ${otherMembers[0].display_name || otherMembers[0].username}`
         : "Direct conversation";
+  const isDirectMessage = convMeta?.type === "dm" && otherMembers.length === 1;
+  const directMessageTarget = otherMembers[0] ?? null;
 
   useEffect(() => {
     if (!user) return;
@@ -618,6 +624,26 @@ function ChatPage() {
     }
   }
 
+  async function handleStartCall(type: "audio" | "video") {
+    if (!user) return;
+
+    if (!isDirectMessage || !directMessageTarget) {
+      toast.error("Calls are available only in direct messages.");
+      return;
+    }
+
+    try {
+      await startOutgoingCall({
+        conversationId: convId,
+        calleeUserId: directMessageTarget.user_id,
+        calleeDisplayName: directMessageTarget.display_name || directMessageTarget.username || "Unknown",
+        type,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start call.");
+    }
+  }
+
   return (
     <div className="app-shell-bg flex h-app overflow-hidden p-0 md:p-4">
       <div className="hidden md:block md:w-[27rem] md:pr-4">
@@ -645,6 +671,30 @@ function ChatPage() {
                 {subtitle}
               </p>
             </div>
+
+            {isDirectMessage && (
+              <>
+                <button
+                  onClick={() => void handleStartCall("audio")}
+                  disabled={isBusy}
+                  className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
+                  aria-label="Start voice call"
+                  title="Start voice call"
+                >
+                  <Phone className="h-4 w-4" />
+                </button>
+
+                <button
+                  onClick={() => void handleStartCall("video")}
+                  disabled={isBusy}
+                  className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
+                  aria-label="Start video call"
+                  title="Start video call"
+                >
+                  <Video className="h-4 w-4" />
+                </button>
+              </>
+            )}
 
             <button
               onClick={() => void setDisappearingMode(disappearing ? null : 60)}
@@ -756,7 +806,6 @@ function ChatPage() {
                         )}
 
                         {message.type === "voice" && mediaUrls[message.id] && (
-                          // eslint-disable-next-line jsx-a11y/media-has-caption
                           <audio controls src={mediaUrls[message.id]} className="h-10 w-[16rem]" />
                         )}
                         {message.type === "voice" && !mediaUrls[message.id] && (
