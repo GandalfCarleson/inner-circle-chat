@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { format } from "date-fns";
+import { format, formatDistanceToNowStrict } from "date-fns";
 import {
   ArrowLeft,
   Image as ImageIcon,
@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { useCallManager } from "@/contexts/CallContext";
+import { usePresence } from "@/contexts/PresenceContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useKeyboardVisibility } from "@/hooks/useKeyboardVisibility";
 import { useAuth } from "@/contexts/AuthContext";
@@ -62,6 +63,8 @@ interface ReactionRow {
 const QUICK_EMOJIS = ["❤️", "😂", "🔥", "👍", "😮", "😢"];
 const IMAGE_ACCEPT_PREFIX = "image/";
 const AUDIO_MIME_TYPE = "audio/webm";
+const TYPING_INDICATOR_TIMEOUT_MS = 3500;
+const TYPING_BROADCAST_THROTTLE_MS = 1200;
 
 // Legacy schema note:
 // messages.ciphertext still stores plain text for compatibility with the original schema.
@@ -79,6 +82,11 @@ function buildReactionMap(rows: { message_id: string; user_id: string; emoji: st
 function scrollToLatest(container: HTMLDivElement | null, behavior: ScrollBehavior = "smooth") {
   if (!container) return;
   container.scrollTo({ top: container.scrollHeight, behavior });
+}
+
+function formatLastSeen(dateString: string) {
+  const distance = formatDistanceToNowStrict(new Date(dateString));
+  return `Last seen ${distance} ago`;
 }
 
 async function fetchConversationMembers(conversationId: string): Promise<MemberInfo[]> {
@@ -164,6 +172,7 @@ async function fetchReactionRows(messageIds: string[]) {
 function ChatPage() {
   const { id: convId } = useParams({ from: "/chat/$id" });
   const { user } = useAuth();
+  const { isUserOnline, getLastSeenAt } = usePresence();
   const { startOutgoingCall, isBusy } = useCallManager();
   const isMobile = useIsMobile();
   const keyboardVisible = useKeyboardVisibility();
@@ -183,6 +192,8 @@ function ChatPage() {
   const [disappearing, setDisappearing] = useState<number | null>(null);
   const [lastReadAt, setLastReadAt] = useState<string | null>(null);
   const [composerHeight, setComposerHeight] = useState(120);
+  const [typingByUserId, setTypingByUserId] = useState<Record<string, number>>({});
+  const [newlyAnimatedMessageIds, setNewlyAnimatedMessageIds] = useState<Record<string, true>>({});
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -190,6 +201,11 @@ function ChatPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const viewportTouchStartYRef = useRef<number | null>(null);
+  const messageIdsRef = useRef<string[]>([]);
+  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const typingStateRef = useRef<"typing" | "idle">("idle");
+  const typingStopTimeoutRef = useRef<number | null>(null);
+  const lastTypingSentAtRef = useRef(0);
 
   const replyTarget = useMemo(
     () => messages.find((message) => message.id === replyTargetId) ?? null,
@@ -212,6 +228,38 @@ function ChatPage() {
   const isDirectMessage = convMeta?.type === "dm" && otherMembers.length === 1;
   const showCallActions = CALLING_ENABLED && isDirectMessage;
   const directMessageTarget = otherMembers[0] ?? null;
+  const activeTypingUserId = useMemo(() => {
+    const now = Date.now();
+    return (
+      Object.entries(typingByUserId)
+        .filter(([memberId, expiresAt]) => memberId !== user?.id && expiresAt > now)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+    );
+  }, [typingByUserId, user?.id]);
+  const typingDisplayName = activeTypingUserId
+    ? members.find((member) => member.user_id === activeTypingUserId)?.display_name ||
+      members.find((member) => member.user_id === activeTypingUserId)?.username ||
+      "Someone"
+    : null;
+  const headerSubtitle = useMemo(() => {
+    if (typingDisplayName) return `${typingDisplayName} is typing...`;
+
+    if (isDirectMessage && directMessageTarget) {
+      if (isUserOnline(directMessageTarget.user_id)) return "Active now";
+      const lastSeenAt = getLastSeenAt(directMessageTarget.user_id);
+      if (lastSeenAt) return formatLastSeen(lastSeenAt);
+      return "Away";
+    }
+
+    return subtitle;
+  }, [
+    directMessageTarget,
+    getLastSeenAt,
+    isDirectMessage,
+    isUserOnline,
+    subtitle,
+    typingDisplayName,
+  ]);
 
   useEffect(() => {
     if (!user) return;
@@ -289,11 +337,15 @@ function ChatPage() {
   }, [convId, user]);
 
   useEffect(() => {
+    messageIdsRef.current = messages.map((message) => message.id);
+  }, [messages]);
+
+  useEffect(() => {
     if (!user) return;
 
     async function refreshReactionsForCurrentMessages() {
       try {
-        setReactions(await fetchReactionRows(messages.map((message) => message.id)));
+        setReactions(await fetchReactionRows(messageIdsRef.current));
       } catch (error) {
         console.error("Failed to refresh reactions", error);
       }
@@ -311,7 +363,20 @@ function ChatPage() {
           filter: `conversation_id=eq.${convId}`,
         },
         (payload) => {
-          setMessages((current) => [...current, payload.new as MessageRow]);
+          const insertedMessage = payload.new as MessageRow;
+          setMessages((current) => {
+            if (current.some((message) => message.id === insertedMessage.id)) return current;
+            return [...current, insertedMessage];
+          });
+          setNewlyAnimatedMessageIds((current) => ({ ...current, [insertedMessage.id]: true }));
+          window.setTimeout(() => {
+            setNewlyAnimatedMessageIds((current) => {
+              if (!current[insertedMessage.id]) return current;
+              const next = { ...current };
+              delete next[insertedMessage.id];
+              return next;
+            });
+          }, 260);
         },
       )
       .on(
@@ -344,7 +409,7 @@ function ChatPage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [convId, messages, user]);
+  }, [convId, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -479,6 +544,75 @@ function ChatPage() {
   }, [keyboardVisible]);
 
   useEffect(() => {
+    if (!user) return;
+
+    const typingChannel = supabase.channel(`chat-typing:${convId}`, {
+      config: {
+        broadcast: { self: true },
+      },
+    });
+    typingChannelRef.current = typingChannel;
+
+    typingChannel
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        const senderId = typeof payload?.user_id === "string" ? payload.user_id : null;
+        if (!senderId || senderId === user.id) return;
+
+        const state = payload?.state === "stop" ? "stop" : "typing";
+        setTypingByUserId((current) => {
+          if (state === "stop") {
+            if (!current[senderId]) return current;
+            const next = { ...current };
+            delete next[senderId];
+            return next;
+          }
+
+          return {
+            ...current,
+            [senderId]: Date.now() + TYPING_INDICATOR_TIMEOUT_MS,
+          };
+        });
+      })
+      .subscribe();
+
+    return () => {
+      if (typingStopTimeoutRef.current) {
+        window.clearTimeout(typingStopTimeoutRef.current);
+        typingStopTimeoutRef.current = null;
+      }
+      if (typingStateRef.current === "typing") {
+        void typingChannel.send({
+          type: "broadcast",
+          event: "typing",
+          payload: {
+            user_id: user.id,
+            state: "stop",
+          },
+        });
+      }
+      typingStateRef.current = "idle";
+      setTypingByUserId({});
+      typingChannelRef.current = null;
+      void supabase.removeChannel(typingChannel);
+    };
+  }, [convId, user]);
+
+  useEffect(() => {
+    const cleanupTimer = window.setInterval(() => {
+      const now = Date.now();
+      setTypingByUserId((current) => {
+        const nextEntries = Object.entries(current).filter(([, expiresAt]) => expiresAt > now);
+        if (nextEntries.length === Object.keys(current).length) return current;
+        return Object.fromEntries(nextEntries);
+      });
+    }, 800);
+
+    return () => {
+      window.clearInterval(cleanupTimer);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!user || messages.length === 0) return;
 
     async function syncReadState() {
@@ -576,11 +710,77 @@ function ChatPage() {
     }
   }
 
+  function sendTypingSignal(state: "typing" | "stop") {
+    if (!user || !typingChannelRef.current) return;
+
+    void typingChannelRef.current.send({
+      type: "broadcast",
+      event: "typing",
+      payload: {
+        user_id: user.id,
+        state,
+      },
+    });
+  }
+
+  function scheduleTypingStop() {
+    if (typingStopTimeoutRef.current) {
+      window.clearTimeout(typingStopTimeoutRef.current);
+    }
+    typingStopTimeoutRef.current = window.setTimeout(() => {
+      if (typingStateRef.current === "typing") {
+        sendTypingSignal("stop");
+        typingStateRef.current = "idle";
+      }
+      typingStopTimeoutRef.current = null;
+    }, TYPING_INDICATOR_TIMEOUT_MS);
+  }
+
+  function updateTypingState(nextText: string) {
+    const hasText = nextText.trim().length > 0;
+
+    if (!hasText) {
+      if (typingStateRef.current === "typing") {
+        sendTypingSignal("stop");
+      }
+      if (typingStopTimeoutRef.current) {
+        window.clearTimeout(typingStopTimeoutRef.current);
+        typingStopTimeoutRef.current = null;
+      }
+      typingStateRef.current = "idle";
+      return;
+    }
+
+    const now = Date.now();
+    if (
+      typingStateRef.current !== "typing" ||
+      now - lastTypingSentAtRef.current > TYPING_BROADCAST_THROTTLE_MS
+    ) {
+      sendTypingSignal("typing");
+      typingStateRef.current = "typing";
+      lastTypingSentAtRef.current = now;
+    }
+
+    scheduleTypingStop();
+  }
+
+  function stopTypingNow() {
+    if (typingStopTimeoutRef.current) {
+      window.clearTimeout(typingStopTimeoutRef.current);
+      typingStopTimeoutRef.current = null;
+    }
+    if (typingStateRef.current === "typing") {
+      sendTypingSignal("stop");
+    }
+    typingStateRef.current = "idle";
+  }
+
   async function handleSendText() {
     if (!user || !text.trim()) return;
 
     const bodyText = text.trim();
     setText("");
+    stopTypingNow();
 
     try {
       await sendMessage({
@@ -621,6 +821,7 @@ function ChatPage() {
         expiresInSec: disappearing,
       });
       setReplyTargetId(null);
+      stopTypingNow();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Upload failed");
     }
@@ -654,6 +855,7 @@ function ChatPage() {
             expiresInSec: disappearing,
           });
           setReplyTargetId(null);
+          stopTypingNow();
         } catch (error) {
           toast.error(error instanceof Error ? error.message : "Send failed");
         }
@@ -765,12 +967,12 @@ function ChatPage() {
         <ChatSidebar activeId={convId} />
       </div>
 
-      <main className="premium-panel chat-main-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[30px]">
-        <header className="chat-header-bar premium-panel-soft sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
+      <main className="premium-panel chat-main-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
+        <header className="chat-header-bar glass-dock sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
           <div className="flex items-center gap-3">
             <Link
               to="/"
-              className="interactive-surface inline-flex h-12 w-12 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:hidden"
+              className="interactive-surface premium-elevated inline-flex h-12 w-12 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:hidden"
               aria-label="Back"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -783,11 +985,9 @@ function ChatPage() {
             />
 
             <div className="min-w-0 flex-1">
-              <h1 className="truncate text-base font-semibold tracking-[-0.025em] text-foreground md:text-lg">
-                {title}
-              </h1>
-              <p className="truncate text-xs uppercase tracking-[0.18em] text-white/38 md:text-[11px]">
-                {subtitle}
+              <h1 className="lux-title truncate text-base md:text-lg">{title}</h1>
+              <p className="truncate text-xs uppercase tracking-[0.15em] text-white/38 md:text-[11px]">
+                {headerSubtitle}
               </p>
             </div>
 
@@ -796,7 +996,7 @@ function ChatPage() {
                 <button
                   onClick={() => void handleStartCall("audio")}
                   disabled={isBusy}
-                  className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
+                  className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
                   aria-label="Start voice call"
                   title="Start voice call"
                 >
@@ -806,7 +1006,7 @@ function ChatPage() {
                 <button
                   onClick={() => void handleStartCall("video")}
                   disabled={isBusy}
-                  className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
+                  className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
                   aria-label="Start video call"
                   title="Start video call"
                 >
@@ -817,10 +1017,10 @@ function ChatPage() {
 
             <button
               onClick={() => void setDisappearingMode(disappearing ? null : 60)}
-              className={`quiet-hover inline-flex h-10 items-center gap-2 rounded-2xl border px-3 text-[11px] font-medium uppercase tracking-[0.18em] md:h-11 md:px-3.5 md:text-xs ${
+              className={`quiet-hover inline-flex h-10 items-center gap-2 rounded-2xl border px-3 text-[11px] font-medium uppercase tracking-[0.16em] md:h-11 md:px-3.5 md:text-xs ${
                 disappearing
-                  ? "border-white/12 bg-white/[0.06] text-foreground"
-                  : "border-white/8 bg-white/[0.02] text-muted-foreground hover:text-foreground"
+                  ? "border-white/16 bg-white/[0.08] text-foreground"
+                  : "border-white/10 bg-black/20 text-muted-foreground hover:text-foreground"
               }`}
               title="Disappearing messages"
             >
@@ -828,7 +1028,7 @@ function ChatPage() {
               {disappearing ? `${disappearing}s` : "Off"}
             </button>
 
-            <button className="interactive-surface hidden h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:inline-flex">
+            <button className="interactive-surface premium-elevated hidden h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:inline-flex">
               <MoreHorizontal className="h-4 w-4" />
             </button>
           </div>
@@ -860,11 +1060,11 @@ function ChatPage() {
         >
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
             {messages.length === 0 && (
-              <div className="premium-panel-soft mx-auto mt-16 max-w-md rounded-[28px] px-7 py-9 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/8 bg-white/[0.03] text-white/72">
+              <div className="premium-panel-soft premium-elevated mx-auto mt-16 max-w-md rounded-[30px] px-7 py-9 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-white/[0.035] text-white/72">
                   <Reply className="h-6 w-6" />
                 </div>
-                <h2 className="mt-4 text-xl font-medium tracking-[-0.03em] text-foreground">
+                <h2 className="mt-4 text-xl font-medium tracking-[-0.02em] text-foreground">
                   Start the conversation
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -893,7 +1093,7 @@ function ChatPage() {
                   key={message.id}
                   className={`group flex flex-col ${mine ? "items-end" : "items-start"} ${
                     startsGroup ? "pt-2" : ""
-                  }`}
+                  } ${newlyAnimatedMessageIds[message.id] ? "message-enter" : ""}`}
                 >
                   {showSender && (
                     <div className="mb-2 flex items-center gap-2 px-1">
@@ -903,7 +1103,7 @@ function ChatPage() {
                         size="sm"
                         className="h-7 w-7 text-[10px]"
                       />
-                      <span className="text-[11px] uppercase tracking-[0.18em] text-white/34">
+                      <span className="text-[11px] uppercase tracking-[0.14em] text-white/38">
                         {sender?.display_name || sender?.username}
                       </span>
                     </div>
@@ -915,8 +1115,8 @@ function ChatPage() {
                     <div className="relative">
                       {replyMessage && (
                         <div
-                          className={`mb-2 rounded-[18px] border bg-white/[0.035] px-3 py-2 text-[11px] text-muted-foreground ${
-                            mine ? "border-white/10" : "border-white/8"
+                          className={`mb-2 rounded-[18px] border bg-black/22 px-3 py-2 text-[11px] text-muted-foreground ${
+                            mine ? "border-white/14" : "border-white/10"
                           }`}
                         >
                           <p className="font-medium text-foreground/72">
@@ -929,10 +1129,10 @@ function ChatPage() {
                       )}
 
                       <div
-                        className={`relative overflow-hidden rounded-[24px] px-3.5 py-3 shadow-[0_12px_30px_rgba(0,0,0,0.18)] md:rounded-[26px] md:px-4 ${
+                        className={`relative overflow-hidden rounded-[24px] px-3.5 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.24)] transition duration-200 active:scale-[0.99] md:rounded-[26px] md:px-4 ${
                           mine
-                            ? "bg-bubble-mine text-bubble-mine-foreground"
-                            : "border border-white/8 bg-bubble-theirs text-bubble-theirs-foreground"
+                            ? "border border-[#b6a7d4]/28 bg-bubble-mine text-bubble-mine-foreground"
+                            : "border border-white/11 bg-bubble-theirs text-bubble-theirs-foreground"
                         } ${startsGroup ? "" : mine ? "rounded-tr-[18px]" : "rounded-tl-[18px]"} ${
                           endsGroup ? "" : mine ? "rounded-br-[18px]" : "rounded-bl-[18px]"
                         }`}
@@ -967,7 +1167,7 @@ function ChatPage() {
 
                         {reactionSummary.length > 0 && (
                           <div
-                            className={`absolute -bottom-3 flex gap-1 rounded-full border border-white/10 bg-[rgba(16,18,22,0.92)] px-2 py-1 text-[11px] text-foreground shadow-[0_10px_24px_rgba(0,0,0,0.22)] ${
+                            className={`absolute -bottom-3 flex gap-1 rounded-full border border-white/14 bg-[rgba(9,13,22,0.95)] px-2 py-1 text-[11px] text-foreground shadow-[0_12px_28px_rgba(0,0,0,0.26)] ${
                               mine ? "left-3" : "right-3"
                             }`}
                           >
@@ -983,7 +1183,7 @@ function ChatPage() {
 
                       {showEmojiFor === message.id && (
                         <div
-                          className={`premium-panel absolute z-10 mt-2 flex gap-1 rounded-full px-2 py-2 ${
+                          className={`glass-dock absolute z-10 mt-2 flex gap-1 rounded-full px-2 py-2 ${
                             mine ? "right-0" : "left-0"
                           }`}
                         >
@@ -1005,14 +1205,14 @@ function ChatPage() {
                         onClick={() =>
                           setShowEmojiFor(showEmojiFor === message.id ? null : message.id)
                         }
-                        className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
+                        className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
                         aria-label="React"
                       >
                         <Smile className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={() => setReplyTargetId(message.id)}
-                        className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
+                        className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
                         aria-label="Reply"
                       >
                         <Reply className="h-3.5 w-3.5" />
@@ -1020,7 +1220,7 @@ function ChatPage() {
                       {mine && (
                         <button
                           onClick={() => void deleteMessage(message.id)}
-                          className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-destructive md:h-9 md:w-9"
+                          className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-destructive md:h-9 md:w-9"
                           aria-label="Delete"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1030,7 +1230,7 @@ function ChatPage() {
                   </div>
 
                   <span
-                    className={`mt-2 px-2 text-[10px] uppercase tracking-[0.14em] text-white/28 ${
+                    className={`mt-2 px-2 text-[10px] uppercase tracking-[0.12em] text-white/30 ${
                       reactionSummary.length > 0 ? "mt-5" : ""
                     }`}
                   >
@@ -1045,15 +1245,15 @@ function ChatPage() {
 
         <div
           ref={composerDockRef}
-          className={`chat-composer-dock sticky bottom-0 z-30 shrink-0 border-t subtle-divider bg-white/[0.02] px-3 md:px-6 ${
+          className={`chat-composer-dock sticky bottom-0 z-30 shrink-0 border-t subtle-divider bg-black/24 px-3 md:px-6 ${
             keyboardVisible ? "pb-2 pt-2" : "mobile-dock-padding py-3 md:py-5"
           }`}
         >
           {replyTarget && (
-            <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-[22px] premium-panel-soft px-3 py-3">
+            <div className="glass-dock mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-[22px] px-3 py-3">
               <Reply className="h-4 w-4 text-muted-foreground" />
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/34">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-white/36">
                   Replying to{" "}
                   {senderOf(replyTarget.sender_id)?.display_name ||
                     senderOf(replyTarget.sender_id)?.username}
@@ -1064,15 +1264,26 @@ function ChatPage() {
               </div>
               <button
                 onClick={() => setReplyTargetId(null)}
-                className="interactive-surface inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                className="interactive-surface premium-elevated inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
           )}
 
+          {typingDisplayName && (
+            <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 px-2 text-[11px] text-white/60">
+              <span className="truncate uppercase tracking-[0.12em]">{typingDisplayName}</span>
+              <span className="typing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
+          )}
+
           <div className="mx-auto max-w-3xl">
-            <div className="premium-panel flex items-end gap-2 rounded-[28px] px-2.5 py-2.5 md:px-4 md:py-4">
+            <div className="glass-dock flex items-end gap-2 rounded-[28px] px-2.5 py-2.5 md:px-4 md:py-4">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1087,17 +1298,24 @@ function ChatPage() {
 
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="interactive-surface inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11"
+                className="interactive-surface premium-elevated inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11"
                 aria-label="Send image"
               >
                 <ImageIcon className="h-4.5 w-4.5" />
               </button>
 
-              <div className="min-w-0 flex-1 rounded-[24px] border border-white/8 bg-black/10 px-3.5 py-2.5 md:px-4">
+              <div className="min-w-0 flex-1 rounded-[24px] border border-white/10 bg-black/20 px-3.5 py-2.5 md:px-4">
                 <textarea
                   ref={textareaRef}
                   value={text}
-                  onChange={(event) => setText(event.target.value)}
+                  onChange={(event) => {
+                    const nextText = event.target.value;
+                    setText(nextText);
+                    updateTypingState(nextText);
+                  }}
+                  onBlur={() => {
+                    stopTypingNow();
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
@@ -1114,7 +1332,7 @@ function ChatPage() {
               {text.trim() ? (
                 <button
                   onClick={() => void handleSendText()}
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_14px_30px_rgba(0,0,0,0.22)] quiet-hover hover:translate-y-[-1px] hover:opacity-95 md:h-11 md:w-11"
+                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_34px_rgba(30,17,58,0.32)] quiet-hover hover:translate-y-[-1px] hover:opacity-95 md:h-11 md:w-11"
                   aria-label="Send"
                 >
                   <Send className="h-4 w-4" />
@@ -1129,7 +1347,7 @@ function ChatPage() {
                   className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl quiet-hover md:h-11 md:w-11 ${
                     recording
                       ? "bg-destructive text-destructive-foreground shadow-[0_16px_30px_rgba(120,24,24,0.24)]"
-                      : "interactive-surface text-muted-foreground hover:text-foreground"
+                      : "interactive-surface premium-elevated text-muted-foreground hover:text-foreground"
                   }`}
                   aria-label={recording ? "Recording - release to send" : "Hold to record voice"}
                 >

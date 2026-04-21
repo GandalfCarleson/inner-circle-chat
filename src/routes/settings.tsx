@@ -1,12 +1,27 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ImagePlus, TriangleAlert, Trash2, X } from "lucide-react";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Activity,
+  ArrowLeft,
+  CalendarDays,
+  Clock3,
+  ImagePlus,
+  MessageSquare,
+  Paperclip,
+  TriangleAlert,
+  Trash2,
+  Users2,
+  X,
+} from "lucide-react";
+import { formatDistanceToNowStrict } from "date-fns";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { MobileDock } from "@/components/MobileDock";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { buildAvatarStoragePath, resolveAvatarUrl } from "@/lib/avatar";
+import { listConversations } from "@/lib/messaging";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -18,6 +33,32 @@ export const Route = createFileRoute("/settings")({
 const MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024;
 const ACCEPTED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
+interface DashboardStats {
+  messagesSent: number;
+  activeDays: number;
+  conversationCount: number;
+  filesShared: number;
+  mostActiveTime: string;
+  recentActivity: string;
+}
+
+interface ConnectionPreview {
+  id: string;
+  name: string;
+  username: string;
+  avatarUrl: string | null;
+  lastInteractionAt: string | null;
+}
+
+const DEFAULT_STATS: DashboardStats = {
+  messagesSent: 0,
+  activeDays: 0,
+  conversationCount: 0,
+  filesShared: 0,
+  mostActiveTime: "No activity yet",
+  recentActivity: "No recent messages yet",
+};
+
 function SettingsPage() {
   const { profile, refreshProfile, signOut } = useAuth();
   const router = useRouter();
@@ -28,14 +69,156 @@ function SettingsPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [deletingAvatar, setDeletingAvatar] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
+  const [connections, setConnections] = useState<ConnectionPreview[]>([]);
 
   useEffect(() => {
     setDisplayName(profile?.display_name ?? "");
     setBio(profile?.bio ?? "");
   }, [profile?.display_name, profile?.bio]);
 
+  useEffect(() => {
+    if (!profile) {
+      setStats(DEFAULT_STATS);
+      setConnections([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadDashboardData() {
+      try {
+        const [messageRowsResult, conversationCountResult, filesCountResult, conversationList] =
+          await Promise.all([
+            supabase
+              .from("messages")
+              .select("id, created_at, type, conversation_id", { count: "exact" })
+              .eq("sender_id", profile.id)
+              .order("created_at", { ascending: false })
+              .limit(500),
+            supabase
+              .from("conversation_members")
+              .select("conversation_id", { count: "exact", head: true })
+              .eq("user_id", profile.id),
+            supabase
+              .from("messages")
+              .select("id", { count: "exact", head: true })
+              .eq("sender_id", profile.id)
+              .in("type", ["image", "voice"]),
+            listConversations(profile.id),
+          ]);
+
+        if (messageRowsResult.error) throw messageRowsResult.error;
+        if (conversationCountResult.error) throw conversationCountResult.error;
+        if (filesCountResult.error) throw filesCountResult.error;
+        if (cancelled) return;
+
+        const sentMessages = messageRowsResult.data ?? [];
+        const activeDaySet = new Set(
+          sentMessages.map((message) => message.created_at.slice(0, 10)),
+        );
+
+        const daytimeBuckets = {
+          "Late night": 0,
+          Morning: 0,
+          Afternoon: 0,
+          Evening: 0,
+        };
+        for (const message of sentMessages) {
+          const hour = new Date(message.created_at).getHours();
+          if (hour < 6) daytimeBuckets["Late night"] += 1;
+          else if (hour < 12) daytimeBuckets.Morning += 1;
+          else if (hour < 18) daytimeBuckets.Afternoon += 1;
+          else daytimeBuckets.Evening += 1;
+        }
+
+        const mostActiveTime =
+          Object.entries(daytimeBuckets).sort((a, b) => b[1] - a[1])[0]?.[1] > 0
+            ? Object.entries(daytimeBuckets).sort((a, b) => b[1] - a[1])[0][0]
+            : "No activity yet";
+
+        const recentActivity = sentMessages[0]?.created_at
+          ? `Last sent ${formatDistanceToNowStrict(new Date(sentMessages[0].created_at))} ago`
+          : "No recent messages yet";
+
+        const connectionById = new Map<string, ConnectionPreview>();
+        for (const conversation of conversationList) {
+          for (const member of conversation.members) {
+            if (member.user_id === profile.id) continue;
+            const interactionAt = conversation.last_message?.created_at ?? conversation.updated_at;
+            const existing = connectionById.get(member.user_id);
+            const candidate: ConnectionPreview = {
+              id: member.user_id,
+              name: member.display_name || member.username || "Unknown",
+              username: member.username || "unknown",
+              avatarUrl: member.avatar_url,
+              lastInteractionAt: interactionAt,
+            };
+
+            if (!existing) {
+              connectionById.set(member.user_id, candidate);
+              continue;
+            }
+
+            const existingTime = existing.lastInteractionAt
+              ? new Date(existing.lastInteractionAt).getTime()
+              : 0;
+            const candidateTime = candidate.lastInteractionAt
+              ? new Date(candidate.lastInteractionAt).getTime()
+              : 0;
+            if (candidateTime > existingTime) {
+              connectionById.set(member.user_id, candidate);
+            }
+          }
+        }
+
+        setStats({
+          messagesSent: messageRowsResult.count ?? sentMessages.length,
+          activeDays: activeDaySet.size,
+          conversationCount: conversationCountResult.count ?? 0,
+          filesShared: filesCountResult.count ?? 0,
+          mostActiveTime,
+          recentActivity,
+        });
+
+        setConnections(
+          Array.from(connectionById.values())
+            .sort((a, b) => {
+              const aTime = a.lastInteractionAt ? new Date(a.lastInteractionAt).getTime() : 0;
+              const bTime = b.lastInteractionAt ? new Date(b.lastInteractionAt).getTime() : 0;
+              return bTime - aTime;
+            })
+            .slice(0, 10),
+        );
+      } catch (error) {
+        console.error("Failed to load profile dashboard stats", error);
+        if (!cancelled) {
+          setStats(DEFAULT_STATS);
+          setConnections([]);
+        }
+      }
+    }
+
+    void loadDashboardData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
   const avatarName = profile?.display_name || profile?.username || "Unknown";
-  const avatarPreviewUrl = useMemo(() => resolveAvatarUrl(profile?.avatar_url), [profile?.avatar_url]);
+  const avatarPreviewUrl = useMemo(
+    () => resolveAvatarUrl(profile?.avatar_url),
+    [profile?.avatar_url],
+  );
+
+  function goBack() {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    router.navigate({ to: "/" });
+  }
 
   async function save() {
     if (!profile || busy) return;
@@ -62,7 +245,10 @@ function SettingsPage() {
   async function updateAvatarField(nextAvatarUrl: string | null) {
     if (!profile) return;
 
-    const { error } = await supabase.from("profiles").update({ avatar_url: nextAvatarUrl }).eq("id", profile.id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ avatar_url: nextAvatarUrl })
+      .eq("id", profile.id);
     if (error) throw error;
     await refreshProfile();
   }
@@ -84,11 +270,13 @@ function SettingsPage() {
 
     try {
       const storagePath = buildAvatarStoragePath(profile.id);
-      const { error: uploadError } = await supabase.storage.from("avatars").upload(storagePath, file, {
-        upsert: true,
-        contentType: file.type,
-        cacheControl: "3600",
-      });
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(storagePath, file, {
+          upsert: true,
+          contentType: file.type,
+          cacheControl: "3600",
+        });
 
       if (uploadError) throw uploadError;
 
@@ -148,31 +336,132 @@ function SettingsPage() {
   }
 
   return (
-    <div className="flex h-app overflow-hidden bg-background">
+    <div className="app-shell-bg flex h-app overflow-hidden">
       <div className="hidden md:block">
         <ChatSidebar />
       </div>
-      <main className="safe-inset mobile-page-gutter flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-xl py-4 md:px-8 md:py-10">
-          <Link
-            to="/"
-            className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground md:hidden"
+      <main className="safe-inset mobile-page-gutter flex-1 overflow-y-auto pb-28 md:pb-0">
+        <div className="mx-auto max-w-2xl py-4 md:px-8 md:py-10">
+          <button
+            type="button"
+            onClick={goBack}
+            className="interactive-surface mb-4 inline-flex items-center gap-1 rounded-full px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+            aria-label="Go back"
           >
             <ArrowLeft className="h-4 w-4" /> Back
-          </Link>
+          </button>
 
-          <h1 className="mb-1 text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="mb-6 text-sm text-muted-foreground">@{profile?.username}</p>
+          <div className="premium-panel premium-elevated mb-6 rounded-[30px] p-5 md:p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div className="relative">
+                <div className="absolute -inset-2 rounded-full bg-[radial-gradient(circle,_rgba(147,126,192,0.36),_transparent_68%)] blur-sm" />
+                <Avatar
+                  name={avatarName}
+                  url={avatarPreviewUrl}
+                  size="lg"
+                  className="relative h-20 w-20 text-lg"
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="lux-kicker">Void Profile</p>
+                <h1 className="lux-title mt-2 text-2xl">
+                  {profile?.display_name || profile?.username}
+                </h1>
+                <p className="mt-1 text-sm text-muted-foreground">@{profile?.username}</p>
+              </div>
+            </div>
+          </div>
 
-          <div className="space-y-5 rounded-2xl border border-border bg-card p-4 sm:p-5">
-            <div className="rounded-[1.5rem] border border-white/8 bg-black/10 p-4">
+          <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+            <StatCard
+              icon={<MessageSquare className="h-4 w-4" />}
+              value={stats.messagesSent}
+              label="Messages sent"
+            />
+            <StatCard
+              icon={<CalendarDays className="h-4 w-4" />}
+              value={stats.activeDays}
+              label="Active days"
+            />
+            <StatCard
+              icon={<Users2 className="h-4 w-4" />}
+              value={stats.conversationCount}
+              label="Conversations"
+            />
+            <StatCard
+              icon={<Paperclip className="h-4 w-4" />}
+              value={stats.filesShared}
+              label="Files shared"
+            />
+          </div>
+
+          <div className="premium-panel-soft mb-6 rounded-[24px] p-4 md:p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm text-foreground">Connections</h2>
+              <span className="text-xs text-white/36">{connections.length} active</span>
+            </div>
+            {connections.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Start chatting to build your connections.
+              </p>
+            ) : (
+              <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+                {connections.map((connection) => (
+                  <button
+                    key={connection.id}
+                    type="button"
+                    onClick={() => {
+                      router.navigate({ to: "/friends" });
+                    }}
+                    className="quiet-hover flex shrink-0 flex-col items-center gap-1.5 rounded-[16px] px-1 py-2"
+                  >
+                    <Avatar
+                      name={connection.name}
+                      url={connection.avatarUrl}
+                      size="sm"
+                      className="h-12 w-12 text-[11px]"
+                    />
+                    <p className="max-w-[3.8rem] truncate text-[11px] text-foreground/90">
+                      {connection.name}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mb-6 grid gap-3 md:grid-cols-2 md:gap-4">
+            <div className="premium-panel-soft rounded-[20px] p-4">
+              <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-white/72">
+                <Clock3 className="h-4 w-4" />
+              </div>
+              <p className="text-xs uppercase tracking-[0.14em] text-white/35">Most active time</p>
+              <p className="mt-2 text-sm text-foreground">{stats.mostActiveTime}</p>
+            </div>
+            <div className="premium-panel-soft rounded-[20px] p-4">
+              <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-white/72">
+                <Activity className="h-4 w-4" />
+              </div>
+              <p className="text-xs uppercase tracking-[0.14em] text-white/35">Recent activity</p>
+              <p className="mt-2 text-sm text-foreground">{stats.recentActivity}</p>
+            </div>
+          </div>
+
+          <div className="premium-panel premium-elevated space-y-5 rounded-[28px] p-4 sm:p-5">
+            <div className="premium-panel-soft rounded-[1.5rem] p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <Avatar name={avatarName} url={avatarPreviewUrl} size="lg" className="h-16 w-16 text-base" />
+                <Avatar
+                  name={avatarName}
+                  url={avatarPreviewUrl}
+                  size="lg"
+                  className="h-16 w-16 text-base"
+                />
 
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-foreground">Profile photo</p>
+                  <p className="text-sm text-foreground">Profile photo</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Upload a square image for the cleanest result. JPG, PNG, WEBP, or GIF up to 5 MB.
+                    Upload a square image for the cleanest result. JPG, PNG, WEBP, or GIF up to 5
+                    MB.
                   </p>
                 </div>
 
@@ -193,10 +482,14 @@ function SettingsPage() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploadingAvatar || deletingAvatar}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground premium-elevated hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ImagePlus className="h-4 w-4" />
-                    {uploadingAvatar ? "Uploading..." : profile?.avatar_url ? "Replace avatar" : "Upload avatar"}
+                    {uploadingAvatar
+                      ? "Uploading..."
+                      : profile?.avatar_url
+                        ? "Replace avatar"
+                        : "Upload avatar"}
                   </button>
 
                   {profile?.avatar_url && (
@@ -204,7 +497,7 @@ function SettingsPage() {
                       type="button"
                       onClick={() => void removeAvatar()}
                       disabled={uploadingAvatar || deletingAvatar}
-                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground disabled:opacity-60"
+                      className="interactive-surface inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-60"
                     >
                       <X className="h-4 w-4" />
                       {deletingAvatar ? "Removing..." : "Remove"}
@@ -215,21 +508,21 @@ function SettingsPage() {
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Display name</label>
+              <label className="mb-2 block text-xs text-muted-foreground">Display name</label>
               <input
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
-                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-base outline-none ring-ring focus:ring-2 md:text-sm"
+                className="w-full rounded-xl border border-white/12 bg-black/[0.18] px-4 py-3 text-base outline-none ring-ring focus:ring-2 md:text-sm"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">Bio</label>
+              <label className="mb-2 block text-xs text-muted-foreground">Bio</label>
               <textarea
                 value={bio}
                 onChange={(event) => setBio(event.target.value)}
                 rows={3}
-                className="w-full resize-none rounded-xl border border-input bg-background px-4 py-3 text-base outline-none ring-ring focus:ring-2 md:text-sm"
+                className="w-full resize-none rounded-xl border border-white/12 bg-black/[0.18] px-4 py-3 text-base outline-none ring-ring focus:ring-2 md:text-sm"
                 placeholder="Anything you want friends to know"
               />
             </div>
@@ -237,31 +530,54 @@ function SettingsPage() {
             <button
               onClick={() => void save()}
               disabled={busy || uploadingAvatar || deletingAvatar}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+              className="inline-flex min-h-12 items-center justify-center rounded-xl bg-primary px-4 py-3 text-sm text-primary-foreground premium-elevated hover:bg-primary/90 disabled:opacity-60"
             >
               {busy ? "Saving..." : "Save"}
             </button>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-border bg-card p-4 sm:p-5">
+          <div className="premium-panel-soft mt-6 rounded-[24px] p-4 sm:p-5">
             <div className="mb-2 flex items-center gap-2">
               <TriangleAlert className="h-4 w-4 text-amber-500" />
-              <h2 className="text-sm font-semibold">Account</h2>
+              <h2 className="text-sm text-foreground">Account</h2>
             </div>
             <p className="text-xs text-muted-foreground">
-              Account deletion is permanent. Your profile, chats, friendships, and uploaded media are removed with the account.
+              Account deletion is permanent. Your profile, chats, friendships, and uploaded media
+              are removed with the account.
             </p>
             <button
               onClick={() => void deleteAccount()}
               disabled={deleting}
-              className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-destructive px-4 py-3 text-sm font-semibold text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
+              className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-destructive px-4 py-3 text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-60"
             >
               <Trash2 className="h-4 w-4" />
               {deleting ? "Deleting..." : "Delete account"}
             </button>
+            <button
+              type="button"
+              onClick={goBack}
+              className="interactive-surface mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
           </div>
         </div>
       </main>
+
+      <MobileDock active="profile" />
+    </div>
+  );
+}
+
+function StatCard({ icon, value, label }: { icon: ReactNode; value: number; label: string }) {
+  return (
+    <div className="premium-panel-soft rounded-[18px] p-3.5">
+      <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-white/72">
+        {icon}
+      </div>
+      <p className="text-xl text-foreground">{value.toLocaleString()}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
     </div>
   );
 }

@@ -4,11 +4,11 @@ const config: CapacitorConfig = {
   appId: "com.voideger.void",
   appName: "Void",
   webDir: "dist-mobile",
-  backgroundColor: "#614385",
+  backgroundColor: "#090c14",
   plugins: {
     StatusBar: {
       style: "LIGHT",
-      backgroundColor: "#614385",
+      backgroundColor: "#090c14",
       overlaysWebView: false,
     },
     Keyboard: {
@@ -18,7 +18,7 @@ const config: CapacitorConfig = {
     },
     SplashScreen: {
       launchShowDuration: 2000,
-      backgroundColor: "#614385",
+      backgroundColor: "#090c14",
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: false,
@@ -28,10 +28,10 @@ const config: CapacitorConfig = {
     },
   },
   android: {
-    backgroundColor: "#614385",
+    backgroundColor: "#090c14",
   },
   ios: {
-    backgroundColor: "#614385",
+    backgroundColor: "#090c14",
   },
 };
 

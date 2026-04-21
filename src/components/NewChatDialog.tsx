@@ -58,7 +58,9 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
         const otherIds = Array.from(
           new Set(
             (friendships ?? []).map((friendship) =>
-              friendship.requester_id === user.id ? friendship.addressee_id : friendship.requester_id,
+              friendship.requester_id === user.id
+                ? friendship.addressee_id
+                : friendship.requester_id,
             ),
           ),
         );
@@ -116,7 +118,10 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
   }, [friends, query]);
 
   const selectedFriends = useMemo(
-    () => selectedFriendIds.map((id) => friends.find((friend) => friend.id === id)).filter(Boolean) as FriendOption[],
+    () =>
+      selectedFriendIds
+        .map((id) => friends.find((friend) => friend.id === id))
+        .filter(Boolean) as FriendOption[],
     [friends, selectedFriendIds],
   );
 
@@ -173,16 +178,17 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="premium-panel shell-noise max-w-2xl border-white/10 bg-[rgba(9,11,14,0.96)] p-0 text-foreground shadow-[0_28px_80px_rgba(0,0,0,0.48)]">
+      <DialogContent className="premium-panel shell-noise max-w-2xl border-white/14 bg-[rgba(7,11,19,0.97)] p-0 text-foreground shadow-[0_34px_88px_rgba(0,0,0,0.54)]">
         <DialogHeader className="border-b subtle-divider px-6 pb-5 pt-6 text-left">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.24em] text-white/38">Void</p>
-              <DialogTitle className="mt-2 text-[1.5rem] font-semibold tracking-[-0.03em] text-foreground">
+              <p className="lux-kicker">Void</p>
+              <DialogTitle className="mt-2 text-[1.5rem] font-medium tracking-[-0.03em] text-foreground">
                 New conversation
               </DialogTitle>
               <DialogDescription className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                Start a direct message or create a private group from the people already in your circle.
+                Start a direct message or create a private group from the people already in your
+                circle.
               </DialogDescription>
             </div>
           </div>
@@ -197,16 +203,18 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                 className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
                   mode === "direct"
                     ? "conversation-selected"
-                    : "interactive-surface border-white/8 hover:border-white/12"
+                    : "interactive-surface border-white/10 hover:border-white/16"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="premium-panel-soft flex h-10 w-10 items-center justify-center rounded-2xl text-white/80">
+                  <div className="glass-dock flex h-10 w-10 items-center justify-center rounded-2xl text-white/80">
                     <MessageCircleMore className="h-4 w-4" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground">Direct chat</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Pick one friend and jump in.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Pick one friend and jump in.
+                    </p>
                   </div>
                 </div>
               </button>
@@ -217,22 +225,24 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                 className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
                   mode === "group"
                     ? "conversation-selected"
-                    : "interactive-surface border-white/8 hover:border-white/12"
+                    : "interactive-surface border-white/10 hover:border-white/16"
                 }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="premium-panel-soft flex h-10 w-10 items-center justify-center rounded-2xl text-white/80">
+                  <div className="glass-dock flex h-10 w-10 items-center justify-center rounded-2xl text-white/80">
                     <Users className="h-4 w-4" />
                   </div>
                   <div>
                     <p className="text-sm font-medium text-foreground">New group</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Name it and choose multiple people.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Name it and choose multiple people.
+                    </p>
                   </div>
                 </div>
               </button>
 
               {mode === "group" && (
-                <div className="rounded-[22px] border border-white/8 bg-white/[0.025] p-3">
+                <div className="glass-dock rounded-[22px] p-3">
                   <label className="mb-2 block text-[11px] uppercase tracking-[0.16em] text-white/40">
                     Group name
                   </label>
@@ -240,7 +250,7 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                     value={groupName}
                     onChange={(event) => setGroupName(event.target.value)}
                     placeholder="Inner circle"
-                    className="w-full rounded-2xl border border-white/8 bg-black/10 px-4 py-3 text-sm text-foreground outline-none ring-ring focus:ring-2"
+                    className="w-full rounded-2xl border border-white/12 bg-black/20 px-4 py-3 text-sm text-foreground outline-none ring-ring focus:ring-2"
                   />
                   <p className="mt-2 text-xs leading-5 text-muted-foreground">
                     Group avatars can be added later if you decide to support them.
@@ -249,9 +259,9 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
               )}
             </div>
 
-            <div className="min-w-0 rounded-[26px] border border-white/8 bg-white/[0.025]">
+            <div className="glass-dock min-w-0 rounded-[26px]">
               <div className="border-b subtle-divider px-4 py-4">
-                <div className="flex items-center gap-3 rounded-[20px] premium-panel-soft px-4 py-3">
+                <div className="glass-dock flex items-center gap-3 rounded-[20px] px-4 py-3">
                   <Search className="h-4 w-4 text-muted-foreground" />
                   <input
                     value={query}
@@ -298,7 +308,7 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                     </div>
                   ) : filteredFriends.length === 0 ? (
                     <div className="flex h-40 flex-col items-center justify-center px-6 text-center">
-                      <div className="premium-panel-soft flex h-12 w-12 items-center justify-center rounded-full text-white/70">
+                      <div className="glass-dock flex h-12 w-12 items-center justify-center rounded-full text-white/70">
                         <Users className="h-5 w-5" />
                       </div>
                       <p className="mt-4 text-sm font-medium text-foreground">
@@ -314,7 +324,8 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                     <ul className="space-y-2">
                       {filteredFriends.map((friend) => {
                         const selected = selectedFriendIds.includes(friend.id);
-                        const directDisabled = mode === "direct" && selectedFriendIds.length === 1 && !selected;
+                        const directDisabled =
+                          mode === "direct" && selectedFriendIds.length === 1 && !selected;
 
                         return (
                           <li key={friend.id}>
@@ -331,7 +342,7 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                               className={`flex w-full items-center gap-3 rounded-[22px] border px-3 py-3 text-left transition ${
                                 selected
                                   ? "conversation-selected"
-                                  : "interactive-surface border-transparent hover:border-white/8"
+                                  : "interactive-surface border-transparent hover:border-white/12"
                               } disabled:cursor-not-allowed disabled:opacity-45`}
                             >
                               <Avatar
@@ -343,7 +354,9 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                                 <p className="truncate text-sm font-medium text-foreground">
                                   {friend.display_name || friend.username}
                                 </p>
-                                <p className="mt-1 truncate text-xs text-muted-foreground">@{friend.username}</p>
+                                <p className="mt-1 truncate text-xs text-muted-foreground">
+                                  @{friend.username}
+                                </p>
                               </div>
                               <div
                                 className={`h-2.5 w-2.5 rounded-full ${
@@ -380,7 +393,7 @@ export function NewChatDialog({ open, onOpenChange }: NewChatDialogProps) {
                 type="button"
                 onClick={() => void handleSubmit()}
                 disabled={!canSubmit || submitting || loadingFriends || friends.length === 0}
-                className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+                className="premium-elevated inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
               >
                 {submitting ? (
                   <>

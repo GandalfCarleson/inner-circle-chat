@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Toaster } from "sonner";
 import { CallLayer } from "@/components/calls/CallLayer";
 import { CallProvider } from "@/contexts/CallContext";
+import { PresenceProvider } from "@/contexts/PresenceContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { initializeNativeShell } from "@/lib/native";
@@ -80,12 +81,14 @@ function RootComponent() {
   return (
     <AuthProvider>
       <PushBootstrap />
-      <CallProvider>
-        <AuthGate>
-          <Outlet />
-        </AuthGate>
-        <CallLayer />
-      </CallProvider>
+      <PresenceProvider>
+        <CallProvider>
+          <AuthGate>
+            <Outlet />
+          </AuthGate>
+          <CallLayer />
+        </CallProvider>
+      </PresenceProvider>
       <Toaster
         theme="dark"
         position="top-center"

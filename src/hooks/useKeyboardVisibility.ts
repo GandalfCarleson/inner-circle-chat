@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import { Keyboard } from "@capacitor/keyboard";
 
 const KEYBOARD_OPEN_THRESHOLD = 120;
 
@@ -10,6 +12,7 @@ export function useKeyboardVisibility() {
     if (typeof window === "undefined") return;
 
     const viewport = window.visualViewport;
+    const listenerHandles: Array<{ remove: () => Promise<void> }> = [];
 
     const readHeight = () => viewport?.height ?? window.innerHeight;
 
@@ -22,6 +25,24 @@ export function useKeyboardVisibility() {
 
     baselineHeightRef.current = readHeight();
     handleViewportChange();
+
+    if (Capacitor.isNativePlatform()) {
+      void Keyboard.addListener("keyboardWillShow", () => {
+        setKeyboardVisible(true);
+      }).then((handle) => listenerHandles.push(handle));
+
+      void Keyboard.addListener("keyboardDidShow", () => {
+        setKeyboardVisible(true);
+      }).then((handle) => listenerHandles.push(handle));
+
+      void Keyboard.addListener("keyboardWillHide", () => {
+        setKeyboardVisible(false);
+      }).then((handle) => listenerHandles.push(handle));
+
+      void Keyboard.addListener("keyboardDidHide", () => {
+        setKeyboardVisible(false);
+      }).then((handle) => listenerHandles.push(handle));
+    }
 
     const handleOrientationChange = () => {
       // Reset baseline after orientation updates settle.
@@ -47,6 +68,9 @@ export function useKeyboardVisibility() {
         window.removeEventListener("resize", handleViewportChange);
       }
       window.removeEventListener("orientationchange", handleOrientationChange);
+      for (const handle of listenerHandles) {
+        void handle.remove();
+      }
     };
   }, []);
 

@@ -5,7 +5,7 @@ import { Keyboard } from "@capacitor/keyboard";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
-const APP_DARK_BACKGROUND = "#614385";
+const APP_DARK_BACKGROUND = "#090c14";
 
 export function isNativeApp() {
   return Capacitor.isNativePlatform();

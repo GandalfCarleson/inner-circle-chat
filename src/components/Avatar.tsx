@@ -29,7 +29,7 @@ export function Avatar({ name, url, size = "md", className }: AvatarProps) {
   return (
     <div
       className={cn(
-        "relative shrink-0 overflow-hidden rounded-full premium-border bg-[radial-gradient(circle_at_top,_rgba(255,248,231,0.18),_transparent_52%),linear-gradient(180deg,_rgba(44,47,54,0.96),_rgba(20,22,27,0.98))] text-[#f6f0e5] shadow-[0_14px_30px_rgba(0,0,0,0.22)]",
+        "relative shrink-0 overflow-hidden rounded-full border border-white/12 bg-[radial-gradient(circle_at_top,_rgba(170,149,214,0.24),_transparent_58%),linear-gradient(180deg,_rgba(23,34,54,0.96),_rgba(10,14,24,0.98))] text-[#eef3ff] shadow-[0_16px_34px_rgba(0,0,0,0.28)]",
         sizeClasses[size],
         className,
       )}
@@ -42,7 +42,7 @@ export function Avatar({ name, url, size = "md", className }: AvatarProps) {
           {initials}
         </div>
       )}
-      <div className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]" />
+      <div className="pointer-events-none absolute inset-0 rounded-full shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]" />
     </div>
   );
 }
