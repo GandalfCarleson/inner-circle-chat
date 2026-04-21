@@ -1,37 +1,37 @@
-import type { CapacitorConfig } from '@capacitor/cli';
+import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: 'com.voideger.void',
-  appName: 'Void',
-  webDir: 'dist-mobile',
-  backgroundColor: '#1F313B',
+  appId: "com.voideger.void",
+  appName: "Void",
+  webDir: "dist-mobile",
+  backgroundColor: "#614385",
   plugins: {
     StatusBar: {
-      style: 'LIGHT',
-      backgroundColor: '#1F313B',
+      style: "LIGHT",
+      backgroundColor: "#614385",
       overlaysWebView: false,
     },
     Keyboard: {
-      resize: 'body',
-      style: 'DARK',
+      resize: "native",
+      style: "DARK",
       resizeOnFullScreen: true,
     },
     SplashScreen: {
       launchShowDuration: 2000,
-      backgroundColor: '#1F313B',
+      backgroundColor: "#614385",
       showSpinner: false,
       splashFullScreen: true,
       splashImmersive: false,
     },
     PushNotifications: {
-      presentationOptions: ['badge', 'sound', 'alert'],
+      presentationOptions: ["badge", "sound", "alert"],
     },
   },
   android: {
-    backgroundColor: '#1F313B',
+    backgroundColor: "#614385",
   },
   ios: {
-    backgroundColor: '#1F313B',
+    backgroundColor: "#614385",
   },
 };
 

@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  CALLING_ENABLED,
   type CallSession,
   type CallType,
   createCallSession,
@@ -253,6 +254,10 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const startOutgoingCall = useCallback(
     async ({ conversationId, calleeUserId, calleeDisplayName, type }: StartOutgoingCallArgs) => {
+      if (!CALLING_ENABLED) {
+        throw new Error("Calling is coming soon.");
+      }
+
       if (!user?.id) {
         throw new Error("You must be signed in to start a call.");
       }
@@ -280,6 +285,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   );
 
   const acceptIncomingCall = useCallback(async () => {
+    if (!CALLING_ENABLED) return;
+
     const current = activeCallRef.current;
     const currentUserId = userIdRef.current;
 
@@ -304,6 +311,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const declineIncomingCall = useCallback(async () => {
+    if (!CALLING_ENABLED) return;
+
     const current = activeCallRef.current;
     const currentUserId = userIdRef.current;
 
@@ -332,6 +341,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [clearCallState, recordTerminalSilence, sendControlSignal]);
 
   const hangupActiveCall = useCallback(async () => {
+    if (!CALLING_ENABLED) return;
+
     const current = activeCallRef.current;
     const currentUserId = userIdRef.current;
 
@@ -363,6 +374,11 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [clearCallState, recordTerminalSilence, sendControlSignal]);
 
   useEffect(() => {
+    if (!CALLING_ENABLED) {
+      clearCallState();
+      return;
+    }
+
     const currentUserId = user?.id;
 
     if (!currentUserId) {
@@ -451,6 +467,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   }, [applySessionUpdate, clearCallState, presentIncomingCall, user?.id]);
 
   useEffect(() => {
+    if (!CALLING_ENABLED) return;
     if (!activeCall || activeCall.role !== "caller" || activeCall.session.status !== "ringing") {
       return;
     }

@@ -5,7 +5,7 @@ import { Keyboard } from "@capacitor/keyboard";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
-const APP_DARK_BACKGROUND = "#1F313B";
+const APP_DARK_BACKGROUND = "#614385";
 
 export function isNativeApp() {
   return Capacitor.isNativePlatform();
@@ -27,7 +27,8 @@ export async function initializeNativeShell() {
   }
 
   try {
-    await Keyboard.setResizeMode({ mode: "body" });
+    // Native resize keeps chat layouts stable while the keyboard appears.
+    await Keyboard.setResizeMode({ mode: "native" });
   } catch (error) {
     console.warn("Failed to configure keyboard resize mode", error);
   }

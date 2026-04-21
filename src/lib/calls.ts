@@ -1,6 +1,8 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
+export const CALLING_ENABLED = import.meta.env.VITE_ENABLE_CALLING_MVP === "true";
+
 export type CallType = "audio" | "video";
 export type CallStatus = "ringing" | "accepted" | "declined" | "ended" | "missed";
 

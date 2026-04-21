@@ -19,8 +19,11 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { useCallManager } from "@/contexts/CallContext";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useKeyboardVisibility } from "@/hooks/useKeyboardVisibility";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { CALLING_ENABLED } from "@/lib/calls";
 import { downloadMedia, getMessageBody, markConversationRead, sendMessage } from "@/lib/messaging";
 
 export const Route = createFileRoute("/chat/$id")({
@@ -162,6 +165,8 @@ function ChatPage() {
   const { id: convId } = useParams({ from: "/chat/$id" });
   const { user } = useAuth();
   const { startOutgoingCall, isBusy } = useCallManager();
+  const isMobile = useIsMobile();
+  const keyboardVisible = useKeyboardVisibility();
   const [members, setMembers] = useState<MemberInfo[]>([]);
   const [convMeta, setConvMeta] = useState<{
     name: string | null;
@@ -177,18 +182,27 @@ function ChatPage() {
   const [showEmojiFor, setShowEmojiFor] = useState<string | null>(null);
   const [disappearing, setDisappearing] = useState<number | null>(null);
   const [lastReadAt, setLastReadAt] = useState<string | null>(null);
+  const [composerHeight, setComposerHeight] = useState(120);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerDockRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const viewportTouchStartYRef = useRef<number | null>(null);
 
   const replyTarget = useMemo(
     () => messages.find((message) => message.id === replyTargetId) ?? null,
     [messages, replyTargetId],
   );
-  const otherMembers = useMemo(() => members.filter((member) => member.user_id !== user?.id), [members, user?.id]);
-  const title = convMeta?.name || otherMembers.map((member) => member.display_name || member.username).join(", ") || "Chat";
+  const otherMembers = useMemo(
+    () => members.filter((member) => member.user_id !== user?.id),
+    [members, user?.id],
+  );
+  const title =
+    convMeta?.name ||
+    otherMembers.map((member) => member.display_name || member.username).join(", ") ||
+    "Chat";
   const subtitle =
     convMeta?.type === "group"
       ? `${members.length} members`
@@ -196,6 +210,7 @@ function ChatPage() {
         ? `Private chat with ${otherMembers[0].display_name || otherMembers[0].username}`
         : "Direct conversation";
   const isDirectMessage = convMeta?.type === "dm" && otherMembers.length === 1;
+  const showCallActions = CALLING_ENABLED && isDirectMessage;
   const directMessageTarget = otherMembers[0] ?? null;
 
   useEffect(() => {
@@ -204,20 +219,21 @@ function ChatPage() {
 
     async function loadConversationChrome() {
       try {
-        const [{ data: conversation, error: conversationError }, nextMembers, ownMembership] = await Promise.all([
-          supabase
-            .from("conversations")
-            .select("name, type, disappearing_seconds")
-            .eq("id", convId)
-            .maybeSingle(),
-          fetchConversationMembers(convId),
-          supabase
-            .from("conversation_members")
-            .select("last_read_at")
-            .eq("conversation_id", convId)
-            .eq("user_id", user.id)
-            .maybeSingle(),
-        ]);
+        const [{ data: conversation, error: conversationError }, nextMembers, ownMembership] =
+          await Promise.all([
+            supabase
+              .from("conversations")
+              .select("name, type, disappearing_seconds")
+              .eq("id", convId)
+              .maybeSingle(),
+            fetchConversationMembers(convId),
+            supabase
+              .from("conversation_members")
+              .select("last_read_at")
+              .eq("conversation_id", convId)
+              .eq("user_id", user.id)
+              .maybeSingle(),
+          ]);
 
         if (conversationError) throw conversationError;
         if (ownMembership.error) throw ownMembership.error;
@@ -288,14 +304,24 @@ function ChatPage() {
       .channel(`chat:${convId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` },
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${convId}`,
+        },
         (payload) => {
           setMessages((current) => [...current, payload.new as MessageRow]);
         },
       )
       .on(
         "postgres_changes",
-        { event: "DELETE", schema: "public", table: "messages", filter: `conversation_id=eq.${convId}` },
+        {
+          event: "DELETE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${convId}`,
+        },
         (payload) => {
           const deletedId = (payload.old as Pick<MessageRow, "id">).id;
           setMessages((current) => current.filter((message) => message.id !== deletedId));
@@ -399,7 +425,9 @@ function ChatPage() {
     // This interval only keeps expired rows from lingering in the local view.
     const timer = window.setInterval(() => {
       setMessages((current) =>
-        current.filter((message) => !message.expires_at || new Date(message.expires_at).getTime() > Date.now()),
+        current.filter(
+          (message) => !message.expires_at || new Date(message.expires_at).getTime() > Date.now(),
+        ),
       );
     }, 5000);
 
@@ -414,6 +442,41 @@ function ChatPage() {
     field.style.height = "0px";
     field.style.height = `${Math.min(field.scrollHeight, 160)}px`;
   }, [text]);
+
+  useEffect(() => {
+    const dock = composerDockRef.current;
+    if (!dock) return;
+
+    const updateHeight = () => {
+      setComposerHeight(Math.ceil(dock.getBoundingClientRect().height));
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => {
+        window.removeEventListener("resize", updateHeight);
+      };
+    }
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(dock);
+    window.addEventListener("resize", updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, [replyTargetId, recording, text]);
+
+  useEffect(() => {
+    if (!keyboardVisible) return;
+    const timer = window.setTimeout(() => scrollToLatest(scrollRef.current, "auto"), 80);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [keyboardVisible]);
 
   useEffect(() => {
     if (!user || messages.length === 0) return;
@@ -459,6 +522,48 @@ function ChatPage() {
     );
   }
 
+  function dismissKeyboard() {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  }
+
+  function maybeDismissKeyboardFromViewportInteraction(target: EventTarget | null) {
+    if (!isMobile) return;
+    if (!keyboardVisible) return;
+    if (document.activeElement !== textareaRef.current) return;
+    if (!(target instanceof Node)) return;
+    if (composerDockRef.current?.contains(target)) return;
+    dismissKeyboard();
+  }
+
+  function armScrollDismissForTouch(target: EventTarget | null, clientY: number | null) {
+    if (!isMobile || !keyboardVisible || document.activeElement !== textareaRef.current) {
+      viewportTouchStartYRef.current = null;
+      return;
+    }
+    if (!(target instanceof Node)) {
+      viewportTouchStartYRef.current = null;
+      return;
+    }
+    if (composerDockRef.current?.contains(target)) {
+      viewportTouchStartYRef.current = null;
+      return;
+    }
+    viewportTouchStartYRef.current = clientY;
+  }
+
+  function maybeDismissKeyboardFromScrollGesture(clientY: number | null) {
+    if (!isMobile || !keyboardVisible || document.activeElement !== textareaRef.current) return;
+    if (viewportTouchStartYRef.current === null || clientY === null) return;
+
+    if (Math.abs(clientY - viewportTouchStartYRef.current) > 14) {
+      dismissKeyboard();
+      viewportTouchStartYRef.current = null;
+    }
+  }
+
   async function refreshReactionsAfterMutation(messageId: string) {
     try {
       const nextReactions = await fetchReactionRows([messageId]);
@@ -487,6 +592,11 @@ function ChatPage() {
         expiresInSec: disappearing,
       });
       setReplyTargetId(null);
+      window.setTimeout(() => scrollToLatest(scrollRef.current, "smooth"), 20);
+
+      if (isMobile && !keyboardVisible) {
+        textareaRef.current?.blur();
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to send");
       setText(bodyText);
@@ -626,6 +736,10 @@ function ChatPage() {
 
   async function handleStartCall(type: "audio" | "video") {
     if (!user) return;
+    if (!CALLING_ENABLED) {
+      toast.message("Calling is coming soon.");
+      return;
+    }
 
     if (!isDirectMessage || !directMessageTarget) {
       toast.error("Calls are available only in direct messages.");
@@ -636,7 +750,8 @@ function ChatPage() {
       await startOutgoingCall({
         conversationId: convId,
         calleeUserId: directMessageTarget.user_id,
-        calleeDisplayName: directMessageTarget.display_name || directMessageTarget.username || "Unknown",
+        calleeDisplayName:
+          directMessageTarget.display_name || directMessageTarget.username || "Unknown",
         type,
       });
     } catch (error) {
@@ -650,8 +765,8 @@ function ChatPage() {
         <ChatSidebar activeId={convId} />
       </div>
 
-      <main className="premium-panel relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[30px]">
-        <header className="safe-top-tight premium-panel-soft sticky top-0 z-20 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
+      <main className="premium-panel chat-main-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[30px]">
+        <header className="chat-header-bar premium-panel-soft sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
           <div className="flex items-center gap-3">
             <Link
               to="/"
@@ -661,7 +776,11 @@ function ChatPage() {
               <ArrowLeft className="h-5 w-5" />
             </Link>
 
-            <Avatar name={title} url={getChatAvatarUrl(convMeta?.type, convMeta?.name, otherMembers)} size="md" />
+            <Avatar
+              name={title}
+              url={getChatAvatarUrl(convMeta?.type, convMeta?.name, otherMembers)}
+              size="md"
+            />
 
             <div className="min-w-0 flex-1">
               <h1 className="truncate text-base font-semibold tracking-[-0.025em] text-foreground md:text-lg">
@@ -672,7 +791,7 @@ function ChatPage() {
               </p>
             </div>
 
-            {isDirectMessage && (
+            {showCallActions && (
               <>
                 <button
                   onClick={() => void handleStartCall("audio")}
@@ -715,7 +834,30 @@ function ChatPage() {
           </div>
         </header>
 
-        <div ref={scrollRef} className="mobile-scroll-padding flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6">
+        <div
+          ref={scrollRef}
+          className="chat-viewport mobile-scroll-padding min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6"
+          style={{
+            scrollPaddingBottom: `calc(env(safe-area-inset-bottom) + ${composerHeight + 24}px)`,
+          }}
+          onTouchStart={(event) => {
+            maybeDismissKeyboardFromViewportInteraction(event.target);
+            armScrollDismissForTouch(event.target, event.touches[0]?.clientY ?? null);
+          }}
+          onTouchMove={(event) => {
+            maybeDismissKeyboardFromScrollGesture(event.touches[0]?.clientY ?? null);
+          }}
+          onTouchEnd={() => {
+            viewportTouchStartYRef.current = null;
+          }}
+          onTouchCancel={() => {
+            viewportTouchStartYRef.current = null;
+          }}
+          onPointerDown={(event) => {
+            if (event.pointerType === "mouse") return;
+            maybeDismissKeyboardFromViewportInteraction(event.target);
+          }}
+        >
           <div className="mx-auto flex max-w-3xl flex-col gap-4">
             {messages.length === 0 && (
               <div className="premium-panel-soft mx-auto mt-16 max-w-md rounded-[28px] px-7 py-9 text-center">
@@ -736,11 +878,12 @@ function ChatPage() {
               const sender = senderOf(message.sender_id);
               const previousMessage = messages[index - 1];
               const nextMessage = messages[index + 1];
-              const startsGroup = !previousMessage || previousMessage.sender_id !== message.sender_id;
+              const startsGroup =
+                !previousMessage || previousMessage.sender_id !== message.sender_id;
               const endsGroup = !nextMessage || nextMessage.sender_id !== message.sender_id;
               const showSender = !mine && convMeta?.type === "group" && startsGroup;
               const replyMessage = message.reply_to
-                ? messages.find((candidate) => candidate.id === message.reply_to) ?? null
+                ? (messages.find((candidate) => candidate.id === message.reply_to) ?? null)
                 : null;
               const reactionSummary = groupedReactions(message.id);
               const replySender = replyMessage ? senderOf(replyMessage.sender_id) : null;
@@ -766,7 +909,9 @@ function ChatPage() {
                     </div>
                   )}
 
-                  <div className={`flex max-w-[96%] items-end gap-2 sm:max-w-[92%] md:max-w-[78%] ${mine ? "flex-row-reverse" : ""}`}>
+                  <div
+                    className={`flex max-w-[96%] items-end gap-2 sm:max-w-[92%] md:max-w-[78%] ${mine ? "flex-row-reverse" : ""}`}
+                  >
                     <div className="relative">
                       {replyMessage && (
                         <div
@@ -777,7 +922,9 @@ function ChatPage() {
                           <p className="font-medium text-foreground/72">
                             {replySender?.display_name || replySender?.username || "Unknown"}
                           </p>
-                          <p className="mt-1 line-clamp-1">{getMessageText(replyMessage) || "Media"}</p>
+                          <p className="mt-1 line-clamp-1">
+                            {getMessageText(replyMessage) || "Media"}
+                          </p>
                         </div>
                       )}
 
@@ -797,7 +944,11 @@ function ChatPage() {
                         )}
 
                         {message.type === "image" && mediaUrls[message.id] && (
-                          <img src={mediaUrls[message.id]} alt="Sent" className="max-h-[18rem] rounded-[18px] sm:max-h-[22rem]" />
+                          <img
+                            src={mediaUrls[message.id]}
+                            alt="Sent"
+                            className="max-h-[18rem] rounded-[18px] sm:max-h-[22rem]"
+                          />
                         )}
                         {message.type === "image" && !mediaUrls[message.id] && (
                           <div className="flex h-36 w-52 items-center justify-center rounded-[18px] bg-black/20 text-xs text-white/60">
@@ -849,18 +1000,20 @@ function ChatPage() {
                       )}
                     </div>
 
-                      <div className="flex flex-col gap-1 opacity-100 transition duration-150 md:opacity-0 md:group-hover:opacity-100">
-                        <button
-                          onClick={() => setShowEmojiFor(showEmojiFor === message.id ? null : message.id)}
-                          className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
-                          aria-label="React"
-                        >
+                    <div className="flex flex-col gap-1 opacity-100 transition duration-150 md:opacity-0 md:group-hover:opacity-100">
+                      <button
+                        onClick={() =>
+                          setShowEmojiFor(showEmojiFor === message.id ? null : message.id)
+                        }
+                        className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
+                        aria-label="React"
+                      >
                         <Smile className="h-3.5 w-3.5" />
                       </button>
                       <button
-                          onClick={() => setReplyTargetId(message.id)}
-                          className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
-                          aria-label="Reply"
+                        onClick={() => setReplyTargetId(message.id)}
+                        className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:text-foreground md:h-9 md:w-9"
+                        aria-label="Reply"
                       >
                         <Reply className="h-3.5 w-3.5" />
                       </button>
@@ -890,15 +1043,24 @@ function ChatPage() {
           </div>
         </div>
 
-        {replyTarget && (
-          <div className="border-t subtle-divider bg-white/[0.02] px-3 py-3 md:px-6">
-            <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-[22px] premium-panel-soft px-3 py-3">
+        <div
+          ref={composerDockRef}
+          className={`chat-composer-dock sticky bottom-0 z-30 shrink-0 border-t subtle-divider bg-white/[0.02] px-3 md:px-6 ${
+            keyboardVisible ? "pb-2 pt-2" : "mobile-dock-padding py-3 md:py-5"
+          }`}
+        >
+          {replyTarget && (
+            <div className="mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-[22px] premium-panel-soft px-3 py-3">
               <Reply className="h-4 w-4 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/34">
-                  Replying to {senderOf(replyTarget.sender_id)?.display_name || senderOf(replyTarget.sender_id)?.username}
+                  Replying to{" "}
+                  {senderOf(replyTarget.sender_id)?.display_name ||
+                    senderOf(replyTarget.sender_id)?.username}
                 </p>
-                <p className="truncate text-sm text-muted-foreground">{getMessageText(replyTarget) || "Media"}</p>
+                <p className="truncate text-sm text-muted-foreground">
+                  {getMessageText(replyTarget) || "Media"}
+                </p>
               </div>
               <button
                 onClick={() => setReplyTargetId(null)}
@@ -907,10 +1069,8 @@ function ChatPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-          </div>
-        )}
+          )}
 
-        <div className="mobile-dock-padding border-t subtle-divider bg-white/[0.02] px-3 py-3 md:px-6 md:py-5">
           <div className="mx-auto max-w-3xl">
             <div className="premium-panel flex items-end gap-2 rounded-[28px] px-2.5 py-2.5 md:px-4 md:py-4">
               <input
@@ -944,9 +1104,10 @@ function ChatPage() {
                       void handleSendText();
                     }
                   }}
+                  enterKeyHint="send"
                   placeholder="Write something thoughtful..."
                   rows={1}
-                  className="max-h-32 w-full resize-none bg-transparent text-[15px] leading-6 text-foreground outline-none placeholder:text-muted-foreground md:max-h-40"
+                  className="max-h-32 w-full resize-none bg-transparent text-[16px] leading-6 text-foreground outline-none placeholder:text-muted-foreground md:max-h-40 md:text-[15px]"
                 />
               </div>
 

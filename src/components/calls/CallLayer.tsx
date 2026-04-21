@@ -2,6 +2,7 @@ import { IncomingCallModal } from "@/components/calls/IncomingCallModal";
 import { CallScreen } from "@/components/calls/CallScreen";
 import { VideoCallScreen } from "@/components/calls/VideoCallScreen";
 import { useCallManager } from "@/contexts/CallContext";
+import { CALLING_ENABLED } from "@/lib/calls";
 
 export function CallLayer() {
   const {
@@ -21,7 +22,7 @@ export function CallLayer() {
     toggleCamera,
   } = useCallManager();
 
-  if (!activeCall) return null;
+  if (!CALLING_ENABLED || !activeCall) return null;
 
   const showIncomingPrompt =
     incomingCallVisible && activeCall.role === "callee" && activeCall.session.status === "ringing";

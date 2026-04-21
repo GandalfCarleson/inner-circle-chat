@@ -43,42 +43,42 @@
 :root {
   --radius: 1rem;
 
-  --background: #1f313b;
+  --background: #516395;
   --foreground: #f7eef0;
 
-  --rail: #1f313b;
+  --rail: #516395;
   --rail-foreground: #f7eef0;
 
-  --card: #383852;
+  --card: #614385;
   --card-foreground: #f7eef0;
 
-  --popover: #383852;
+  --popover: #614385;
   --popover-foreground: #f7eef0;
 
-  --primary: #b94e56;
-  --primary-foreground: #fff4f5;
+  --primary: #614385;
+  --primary-foreground: #f8f4ff;
 
-  --secondary: #784259;
-  --secondary-foreground: #fff0f2;
+  --secondary: #516395;
+  --secondary-foreground: #eff3ff;
 
-  --muted: #383852;
+  --muted: #5b4c8f;
   --muted-foreground: rgb(247 238 240 / 0.58);
 
-  --accent: #be4039;
-  --accent-foreground: #fff2f1;
+  --accent: #6a4a96;
+  --accent-foreground: #f6f2ff;
 
   --destructive: oklch(0.61 0.18 24);
   --destructive-foreground: oklch(0.98 0.003 90);
 
-  --success: #be4039;
+  --success: #6f59a8;
 
   --border: rgb(247 238 240 / 0.14);
-  --input: #383852;
-  --ring: rgb(185 78 86 / 0.34);
+  --input: #5b4c8f;
+  --ring: rgb(97 67 133 / 0.34);
 
-  --bubble-mine: #b94e56;
-  --bubble-mine-foreground: #fff4f5;
-  --bubble-theirs: #383852;
+  --bubble-mine: #614385;
+  --bubble-mine-foreground: #f8f4ff;
+  --bubble-theirs: #5b4c8f;
   --bubble-theirs-foreground: #f7eef0;
 }
 
@@ -124,15 +124,16 @@
 
   html {
     color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
     min-height: 100vh;
     min-height: 100dvh;
     background:
-      radial-gradient(circle at top, rgb(185 78 86 / 0.12), transparent 24rem),
-      radial-gradient(circle at bottom right, rgb(120 66 89 / 0.2), transparent 28rem),
-      linear-gradient(180deg, #383852 0%, #1f313b 100%);
+      radial-gradient(circle at top, rgb(97 67 133 / 0.22), transparent 24rem),
+      radial-gradient(circle at bottom right, rgb(81 99 149 / 0.2), transparent 28rem),
+      linear-gradient(180deg, #614385 0%, #516395 100%);
     color: var(--color-foreground);
     font-feature-settings: "ss01", "cv11", "salt";
     -webkit-font-smoothing: antialiased;
@@ -141,15 +142,15 @@
   }
 
   ::selection {
-    background: rgb(185 78 86 / 0.24);
+    background: rgb(97 67 133 / 0.24);
     color: var(--color-foreground);
   }
 
   *:focus-visible {
     outline: none;
     box-shadow:
-      0 0 0 1px rgb(185 78 86 / 0.28),
-      0 0 0 4px rgb(185 78 86 / 0.12);
+      0 0 0 1px rgb(97 67 133 / 0.28),
+      0 0 0 4px rgb(97 67 133 / 0.12);
   }
 
   *::-webkit-scrollbar {
@@ -164,12 +165,12 @@
   *::-webkit-scrollbar-thumb {
     border: 2px solid transparent;
     border-radius: 999px;
-    background: rgb(185 78 86 / 0.22);
+    background: rgb(97 67 133 / 0.24);
     background-clip: padding-box;
   }
 
   *::-webkit-scrollbar-thumb:hover {
-    background: rgb(190 64 57 / 0.32);
+    background: rgb(81 99 149 / 0.32);
     background-clip: padding-box;
   }
 }
@@ -177,15 +178,14 @@
 @layer utilities {
   .app-shell-bg {
     background:
-      radial-gradient(circle at top left, rgb(185 78 86 / 0.1), transparent 22rem),
-      radial-gradient(circle at bottom right, rgb(120 66 89 / 0.22), transparent 28rem),
-      linear-gradient(180deg, rgb(56 56 82 / 0.96), rgb(31 49 59 / 0.98));
+      radial-gradient(circle at top left, rgb(97 67 133 / 0.2), transparent 22rem),
+      radial-gradient(circle at bottom right, rgb(81 99 149 / 0.24), transparent 28rem),
+      linear-gradient(180deg, rgb(97 67 133 / 0.96), rgb(81 99 149 / 0.98));
   }
 
   .premium-panel {
     background:
-      linear-gradient(180deg, rgb(247 238 240 / 0.035), transparent 20%),
-      rgb(56 56 82 / 0.82);
+      linear-gradient(180deg, rgb(247 238 240 / 0.04), transparent 22%), rgb(96 77 142 / 0.82);
     border: 1px solid rgb(247 238 240 / 0.1);
     box-shadow:
       inset 0 1px 0 rgb(247 238 240 / 0.05),
@@ -194,7 +194,7 @@
   }
 
   .premium-panel-soft {
-    background: rgb(56 56 82 / 0.68);
+    background: rgb(89 89 143 / 0.68);
     border: 1px solid rgb(247 238 240 / 0.08);
     box-shadow: inset 0 1px 0 rgb(247 238 240 / 0.04);
     backdrop-filter: blur(14px);
@@ -221,8 +221,8 @@
   }
 
   .quiet-hover:hover {
-    background-color: rgb(185 78 86 / 0.08);
-    border-color: rgb(185 78 86 / 0.16);
+    background-color: rgb(97 67 133 / 0.1);
+    border-color: rgb(97 67 133 / 0.2);
   }
 
   .interactive-surface {
@@ -236,8 +236,8 @@
   }
 
   .interactive-surface:hover {
-    background: rgb(185 78 86 / 0.08);
-    border-color: rgb(185 78 86 / 0.14);
+    background: rgb(97 67 133 / 0.1);
+    border-color: rgb(97 67 133 / 0.16);
   }
 
   .subtle-divider {
@@ -262,9 +262,7 @@
   }
 
   .conversation-selected {
-    background:
-      linear-gradient(90deg, rgb(185 78 86 / 0.16), transparent 65%),
-      rgb(185 78 86 / 0.08);
+    background: linear-gradient(90deg, rgb(97 67 133 / 0.2), transparent 65%), rgb(97 67 133 / 0.1);
     border-color: rgb(247 238 240 / 0.12);
     box-shadow:
       inset 0 1px 0 rgb(247 238 240 / 0.05),
@@ -326,5 +324,34 @@
 
   .mobile-scroll-padding {
     scroll-padding-bottom: calc(env(safe-area-inset-bottom) + 7rem);
+  }
+
+  .chat-main-shell {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .chat-header-bar {
+    padding-top: max(0.4rem, env(safe-area-inset-top));
+    backdrop-filter: blur(16px);
+  }
+
+  .chat-viewport {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    scroll-behavior: smooth;
+    touch-action: pan-y;
+  }
+
+  .chat-composer-dock {
+    backdrop-filter: blur(16px);
+  }
+}
+
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
   }
 }
