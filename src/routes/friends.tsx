@@ -190,20 +190,20 @@ function FriendsPage() {
   const accepted = friends.filter((friendship) => friendship.status === "accepted");
 
   return (
-    <div className="app-shell-bg flex h-app overflow-hidden">
+    <div className="screen-theme-friends utility-shell-bg screen-enter flex h-app overflow-hidden">
       <div className="hidden md:block">
         <ChatSidebar />
       </div>
 
       <main className="safe-inset mobile-page-gutter flex-1 overflow-y-auto pb-28 md:pb-0">
         <div className="mx-auto max-w-2xl py-4 md:px-8 md:py-10">
-          <p className="lux-kicker">Circle Network</p>
-          <h1 className="lux-title mb-1 mt-2 text-2xl">Friends</h1>
-          <p className="mb-6 text-sm text-muted-foreground">
+          <p className="lux-kicker">Void Network</p>
+          <h1 className="lux-title mb-1 mt-2 text-[1.95rem]">Friends</h1>
+          <p className="mb-7 text-sm text-muted-foreground">
             Add friends by username. No phone needed.
           </p>
 
-          <div className="premium-panel premium-elevated mb-6 rounded-[26px] p-4">
+          <div className="surface-secondary mb-7 rounded-[24px] p-4">
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -218,13 +218,13 @@ function FriendsPage() {
                     if (event.key === "Enter") void search();
                   }}
                   placeholder="Search by username"
-                  className="w-full rounded-lg border border-white/12 bg-black/20 py-2.5 pl-9 pr-3 text-sm outline-none ring-ring focus:ring-2"
+                  className="w-full rounded-xl border border-white/12 bg-black/20 py-2.5 pl-9 pr-3 text-sm outline-none ring-ring focus:ring-2"
                 />
               </div>
               <button
                 onClick={() => void search()}
                 disabled={searching}
-                className="premium-elevated min-h-12 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 sm:min-h-0"
+                className="premium-elevated quiet-hover min-h-12 rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-60 sm:min-h-0"
               >
                 {searching ? "..." : "Search"}
               </button>
@@ -240,7 +240,7 @@ function FriendsPage() {
                   return (
                     <li
                       key={profile.id}
-                      className="premium-panel-soft flex items-center gap-3 rounded-xl p-3"
+                      className="flat-section quiet-hover flex items-center gap-3 rounded-xl p-3"
                     >
                       <Avatar
                         name={profile.display_name || profile.username}
@@ -259,7 +259,7 @@ function FriendsPage() {
                       {!existingFriendship ? (
                         <button
                           onClick={() => void sendRequest(profile.id)}
-                          className="premium-elevated min-h-10 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                          className="premium-elevated quiet-hover min-h-10 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
                           aria-label={`Add ${profile.username}`}
                         >
                           <UserPlus className="inline h-3.5 w-3.5" />
@@ -281,7 +281,7 @@ function FriendsPage() {
               {incoming.map((friendship) => (
                 <li
                   key={friendship.id}
-                  className="premium-panel-soft flex items-center gap-3 rounded-xl p-3"
+                  className="surface-highlight quiet-hover flex items-center gap-3 rounded-xl p-3"
                 >
                   <Avatar
                     name={friendship.other?.display_name || friendship.other?.username || "Unknown"}
@@ -296,13 +296,13 @@ function FriendsPage() {
                   </div>
                   <button
                     onClick={() => void respond(friendship.id, true)}
-                    className="min-h-10 min-w-10 rounded-full bg-success/20 p-2 text-success premium-elevated hover:bg-success/30"
+                    className="min-h-10 min-w-10 rounded-full bg-success/20 p-2 text-success premium-elevated quiet-hover hover:bg-success/30"
                   >
                     <Check className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => void respond(friendship.id, false)}
-                    className="min-h-10 min-w-10 rounded-full bg-destructive/20 p-2 text-destructive premium-elevated hover:bg-destructive/30"
+                    className="min-h-10 min-w-10 rounded-full bg-destructive/20 p-2 text-destructive premium-elevated quiet-hover hover:bg-destructive/30"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -313,14 +313,14 @@ function FriendsPage() {
 
           <Section title={`Friends (${accepted.length})`}>
             {accepted.length === 0 ? (
-              <li className="premium-panel-soft rounded-lg p-4 text-center text-sm text-muted-foreground">
+              <li className="flat-section rounded-lg p-4 text-center text-sm text-muted-foreground">
                 {loadingFriends ? "Loading friends..." : "No friends yet. Search above to add one."}
               </li>
             ) : (
               accepted.map((friendship) => (
                 <li
                   key={friendship.id}
-                  className="premium-panel-soft flex items-center gap-3 rounded-xl p-3"
+                  className="flat-section quiet-hover flex items-center gap-3 rounded-xl p-3"
                 >
                   <Avatar
                     name={friendship.other?.display_name || friendship.other?.username || "Unknown"}
@@ -338,7 +338,7 @@ function FriendsPage() {
                   {friendship.other && (
                     <button
                       onClick={() => void openDM(friendship.other!.id)}
-                      className="premium-elevated min-h-10 min-w-10 rounded-full bg-primary p-2 text-primary-foreground hover:bg-primary/90"
+                      className="premium-elevated quiet-hover min-h-10 min-w-10 rounded-full bg-primary p-2 text-primary-foreground hover:bg-primary/90"
                     >
                       <MessageCircle className="h-4 w-4" />
                     </button>
@@ -353,7 +353,7 @@ function FriendsPage() {
               {outgoing.map((friendship) => (
                 <li
                   key={friendship.id}
-                  className="premium-panel-soft flex items-center gap-3 rounded-xl p-3"
+                  className="flat-section quiet-hover flex items-center gap-3 rounded-xl p-3"
                 >
                   <Avatar
                     name={friendship.other?.display_name || friendship.other?.username || "Unknown"}
@@ -386,10 +386,8 @@ function FriendsPage() {
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="mb-6">
-      <h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-white/48">
-        {title}
-      </h2>
+    <section className="mb-9">
+      <h2 className="mb-3 text-xs uppercase tracking-[0.16em] text-white/44">{title}</h2>
       <ul className="space-y-2">{children}</ul>
     </section>
   );

@@ -59,10 +59,21 @@ const DEFAULT_STATS: DashboardStats = {
   recentActivity: "No recent messages yet",
 };
 
+const PROGRESS_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"];
+
+function buildProgressSeries(stats: DashboardStats) {
+  const seed = Math.max(stats.messagesSent, 12);
+  return PROGRESS_MONTHS.map((_, index) => {
+    const raw = seed / (index + 4) + stats.activeDays * 3 + index * 7 + stats.filesShared * 2;
+    return 32 + (raw % 48);
+  });
+}
+
 function SettingsPage() {
   const { profile, refreshProfile, signOut } = useAuth();
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editSectionRef = useRef<HTMLDivElement>(null);
   const [displayName, setDisplayName] = useState(profile?.display_name ?? "");
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [busy, setBusy] = useState(false);
@@ -211,6 +222,8 @@ function SettingsPage() {
     () => resolveAvatarUrl(profile?.avatar_url),
     [profile?.avatar_url],
   );
+  const mostInteractedConnection = connections[0] ?? null;
+  const progressSeries = useMemo(() => buildProgressSeries(stats), [stats]);
 
   function goBack() {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -336,7 +349,7 @@ function SettingsPage() {
   }
 
   return (
-    <div className="app-shell-bg flex h-app overflow-hidden">
+    <div className="screen-theme-profile profile-shell-bg screen-enter flex h-app overflow-hidden">
       <div className="hidden md:block">
         <ChatSidebar />
       </div>
@@ -351,55 +364,77 @@ function SettingsPage() {
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
 
-          <div className="premium-panel premium-elevated mb-6 rounded-[30px] p-5 md:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="relative">
-                <div className="absolute -inset-2 rounded-full bg-[radial-gradient(circle,_rgba(147,126,192,0.36),_transparent_68%)] blur-sm" />
+          <div className="surface-primary premium-elevated mb-8 rounded-[30px] p-5 md:p-6">
+            <div className="profile-hero-card">
+              <div className="profile-hero-glow" />
+              <div className="profile-hero-avatar-ring">
                 <Avatar
                   name={avatarName}
                   url={avatarPreviewUrl}
                   size="lg"
-                  className="relative h-20 w-20 text-lg"
+                  className="relative z-10 h-[5.5rem] w-[5.5rem] text-lg"
                 />
               </div>
-              <div className="min-w-0 flex-1">
-                <p className="lux-kicker">Void Profile</p>
-                <h1 className="lux-title mt-2 text-2xl">
-                  {profile?.display_name || profile?.username}
-                </h1>
+              <div className="mt-4 text-center">
+                <div className="inline-flex items-center gap-2">
+                  <h1 className="lux-title text-2xl">{profile?.display_name || profile?.username}</h1>
+                  <span className="profile-pro-pill">Pro</span>
+                </div>
                 <p className="mt-1 text-sm text-muted-foreground">@{profile?.username}</p>
+                <p className="mt-1 text-xs tracking-[0.08em] text-white/52">Building the future</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    editSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="profile-edit-button quiet-hover mt-4 inline-flex items-center justify-center rounded-full px-4 py-2 text-sm text-foreground"
+                >
+                  Edit Profile
+                </button>
               </div>
             </div>
           </div>
 
-          <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+          <ProfileProgressCard series={progressSeries} />
+
+          <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
             <StatCard
               icon={<MessageSquare className="h-4 w-4" />}
               value={stats.messagesSent}
               label="Messages sent"
+              tone="highlight"
             />
             <StatCard
               icon={<CalendarDays className="h-4 w-4" />}
               value={stats.activeDays}
               label="Active days"
+              tone="primary"
             />
             <StatCard
               icon={<Users2 className="h-4 w-4" />}
               value={stats.conversationCount}
               label="Conversations"
+              tone="flat"
             />
             <StatCard
               icon={<Paperclip className="h-4 w-4" />}
               value={stats.filesShared}
               label="Files shared"
+              tone="flat"
             />
           </div>
 
-          <div className="premium-panel-soft mb-6 rounded-[24px] p-4 md:p-5">
+          <div className="surface-secondary mb-8 rounded-[24px] p-4 md:p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm text-foreground">Connections</h2>
               <span className="text-xs text-white/36">{connections.length} active</span>
             </div>
+            {mostInteractedConnection && (
+              <p className="mb-3 text-xs text-white/42">
+                Most interacted:{" "}
+                <span className="text-foreground">{mostInteractedConnection.name}</span>
+              </p>
+            )}
             {connections.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Start chatting to build your connections.
@@ -413,7 +448,7 @@ function SettingsPage() {
                     onClick={() => {
                       router.navigate({ to: "/friends" });
                     }}
-                    className="quiet-hover flex shrink-0 flex-col items-center gap-1.5 rounded-[16px] px-1 py-2"
+                    className="quiet-hover surface-secondary flex shrink-0 flex-col items-center gap-1.5 rounded-[16px] px-1.5 py-2"
                   >
                     <Avatar
                       name={connection.name}
@@ -430,15 +465,15 @@ function SettingsPage() {
             )}
           </div>
 
-          <div className="mb-6 grid gap-3 md:grid-cols-2 md:gap-4">
-            <div className="premium-panel-soft rounded-[20px] p-4">
+          <div className="mb-8 grid gap-3 md:grid-cols-2 md:gap-4">
+            <div className="surface-highlight rounded-[20px] p-4">
               <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-white/72">
                 <Clock3 className="h-4 w-4" />
               </div>
               <p className="text-xs uppercase tracking-[0.14em] text-white/35">Most active time</p>
               <p className="mt-2 text-sm text-foreground">{stats.mostActiveTime}</p>
             </div>
-            <div className="premium-panel-soft rounded-[20px] p-4">
+            <div className="flat-section rounded-[20px] p-4">
               <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-white/72">
                 <Activity className="h-4 w-4" />
               </div>
@@ -447,8 +482,8 @@ function SettingsPage() {
             </div>
           </div>
 
-          <div className="premium-panel premium-elevated space-y-5 rounded-[28px] p-4 sm:p-5">
-            <div className="premium-panel-soft rounded-[1.5rem] p-4">
+          <div ref={editSectionRef} className="surface-secondary mb-8 space-y-5 rounded-[28px] p-4 sm:p-5">
+            <div className="surface-primary rounded-[1.5rem] p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <Avatar
                   name={avatarName}
@@ -482,7 +517,7 @@ function SettingsPage() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={uploadingAvatar || deletingAvatar}
-                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground premium-elevated hover:bg-primary/90 disabled:opacity-60"
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground premium-elevated quiet-hover hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ImagePlus className="h-4 w-4" />
                     {uploadingAvatar
@@ -536,7 +571,7 @@ function SettingsPage() {
             </button>
           </div>
 
-          <div className="premium-panel-soft mt-6 rounded-[24px] p-4 sm:p-5">
+          <div className="surface-secondary mt-6 rounded-[24px] p-4 sm:p-5">
             <div className="mb-2 flex items-center gap-2">
               <TriangleAlert className="h-4 w-4 text-amber-500" />
               <h2 className="text-sm text-foreground">Account</h2>
@@ -570,14 +605,94 @@ function SettingsPage() {
   );
 }
 
-function StatCard({ icon, value, label }: { icon: ReactNode; value: number; label: string }) {
+function StatCard({
+  icon,
+  value,
+  label,
+  tone,
+}: {
+  icon: ReactNode;
+  value: number;
+  label: string;
+  tone: "highlight" | "primary" | "flat";
+}) {
+  const toneClass =
+    tone === "highlight"
+      ? "surface-highlight"
+      : tone === "primary"
+        ? "surface-primary"
+        : "flat-section";
+
   return (
-    <div className="premium-panel-soft rounded-[18px] p-3.5">
+    <div className={`${toneClass} quiet-hover rounded-[18px] p-3.5`}>
       <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-white/8 text-white/72">
         {icon}
       </div>
-      <p className="text-xl text-foreground">{value.toLocaleString()}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+      <p className="text-[1.7rem] tracking-[-0.03em] text-foreground">{value.toLocaleString()}</p>
+      <p className="mt-1 text-[11px] uppercase tracking-[0.1em] text-muted-foreground/90">{label}</p>
+    </div>
+  );
+}
+
+function ProfileProgressCard({ series }: { series: number[] }) {
+  const maxValue = Math.max(...series, 1);
+  const points = series
+    .map((value, index) => {
+      const x = (index / (series.length - 1)) * 100;
+      const y = 78 - (value / maxValue) * 52;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const focusIndex = Math.min(3, series.length - 1);
+  const focusX = (focusIndex / (series.length - 1)) * 100;
+  const focusY = 78 - (series[focusIndex] / maxValue) * 52;
+
+  return (
+    <div className="profile-progress-card surface-secondary mb-8 rounded-[24px] p-4 md:p-5">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm text-foreground">Your Progress</h2>
+        <span className="text-xs text-white/44">This month</span>
+      </div>
+      <div className="relative h-[8.5rem]">
+        <svg viewBox="0 0 100 86" className="h-full w-full">
+          <defs>
+            <linearGradient id="profile-progress-line" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="rgba(152,115,222,0.95)" />
+              <stop offset="55%" stopColor="rgba(194,143,92,0.9)" />
+              <stop offset="100%" stopColor="rgba(238,178,120,0.85)" />
+            </linearGradient>
+            <linearGradient id="profile-progress-fill" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="rgba(152,115,222,0.22)" />
+              <stop offset="100%" stopColor="rgba(152,115,222,0)" />
+            </linearGradient>
+          </defs>
+          <polyline
+            points={`0,82 ${points} 100,82`}
+            fill="url(#profile-progress-fill)"
+            stroke="none"
+          />
+          <polyline
+            points={points}
+            fill="none"
+            stroke="url(#profile-progress-line)"
+            strokeWidth="2.1"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx={focusX} cy={focusY} r="2.6" fill="rgba(230,186,141,0.98)" />
+        </svg>
+        <span
+          className="profile-progress-pill absolute -translate-x-1/2 -translate-y-1/2 text-[10px]"
+          style={{ left: `${focusX}%`, top: `${focusY}%` }}
+        >
+          +12.5%
+        </span>
+      </div>
+      <div className="mt-1 grid grid-cols-7 text-center text-[11px] text-white/34">
+        {PROGRESS_MONTHS.map((month) => (
+          <span key={month}>{month}</span>
+        ))}
+      </div>
     </div>
   );
 }

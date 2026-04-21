@@ -7,6 +7,7 @@ import {
   Mic,
   MoreHorizontal,
   Phone,
+  Plus,
   Reply,
   Send,
   Smile,
@@ -962,12 +963,12 @@ function ChatPage() {
   }
 
   return (
-    <div className="app-shell-bg flex h-app overflow-hidden p-0 md:p-4">
+    <div className="screen-theme-chat chat-shell-bg screen-enter flex h-app overflow-hidden p-0 md:p-4">
       <div className="hidden md:block md:w-[27rem] md:pr-4">
         <ChatSidebar activeId={convId} />
       </div>
 
-      <main className="premium-panel chat-main-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
+      <main className="surface-secondary premium-border chat-main-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
         <header className="chat-header-bar glass-dock sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
           <div className="flex items-center gap-3">
             <Link
@@ -986,7 +987,14 @@ function ChatPage() {
 
             <div className="min-w-0 flex-1">
               <h1 className="lux-title truncate text-base md:text-lg">{title}</h1>
-              <p className="truncate text-xs uppercase tracking-[0.15em] text-white/38 md:text-[11px]">
+              <p className="inline-flex max-w-full items-center gap-1.5 truncate text-xs uppercase tracking-[0.15em] text-white/38 md:text-[11px]">
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                    isDirectMessage && directMessageTarget && isUserOnline(directMessageTarget.user_id)
+                      ? "bg-emerald-400"
+                      : "bg-white/30"
+                  }`}
+                />
                 {headerSubtitle}
               </p>
             </div>
@@ -996,7 +1004,7 @@ function ChatPage() {
                 <button
                   onClick={() => void handleStartCall("audio")}
                   disabled={isBusy}
-                  className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
+                  className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
                   aria-label="Start voice call"
                   title="Start voice call"
                 >
@@ -1006,7 +1014,7 @@ function ChatPage() {
                 <button
                   onClick={() => void handleStartCall("video")}
                   disabled={isBusy}
-                  className="interactive-surface premium-elevated inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
+                  className="interactive-surface inline-flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground transition disabled:cursor-not-allowed disabled:opacity-45 hover:text-foreground md:h-11 md:w-11"
                   aria-label="Start video call"
                   title="Start video call"
                 >
@@ -1017,15 +1025,14 @@ function ChatPage() {
 
             <button
               onClick={() => void setDisappearingMode(disappearing ? null : 60)}
-              className={`quiet-hover inline-flex h-10 items-center gap-2 rounded-2xl border px-3 text-[11px] font-medium uppercase tracking-[0.16em] md:h-11 md:px-3.5 md:text-xs ${
+              className={`interactive-surface quiet-hover inline-flex h-10 w-10 items-center justify-center rounded-2xl border text-muted-foreground md:h-11 md:w-11 ${
                 disappearing
                   ? "border-white/16 bg-white/[0.08] text-foreground"
-                  : "border-white/10 bg-black/20 text-muted-foreground hover:text-foreground"
+                  : "border-white/10 hover:text-foreground"
               }`}
               title="Disappearing messages"
             >
               <Timer className="h-3.5 w-3.5" />
-              {disappearing ? `${disappearing}s` : "Off"}
             </button>
 
             <button className="interactive-surface premium-elevated hidden h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:inline-flex">
@@ -1058,7 +1065,13 @@ function ChatPage() {
             maybeDismissKeyboardFromViewportInteraction(event.target);
           }}
         >
-          <div className="mx-auto flex max-w-3xl flex-col gap-4">
+          <div className="mx-auto flex max-w-3xl flex-col gap-5">
+            {messages.length > 0 && (
+              <div className="mx-auto rounded-full border border-white/10 bg-black/24 px-3 py-1 text-[11px] uppercase tracking-[0.12em] text-white/42">
+                Today
+              </div>
+            )}
+
             {messages.length === 0 && (
               <div className="premium-panel-soft premium-elevated mx-auto mt-16 max-w-md rounded-[30px] px-7 py-9 text-center">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-white/[0.035] text-white/72">
@@ -1131,8 +1144,8 @@ function ChatPage() {
                       <div
                         className={`relative overflow-hidden rounded-[24px] px-3.5 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.24)] transition duration-200 active:scale-[0.99] md:rounded-[26px] md:px-4 ${
                           mine
-                            ? "border border-[#b6a7d4]/28 bg-bubble-mine text-bubble-mine-foreground"
-                            : "border border-white/11 bg-bubble-theirs text-bubble-theirs-foreground"
+                            ? "message-bubble-mine"
+                            : "message-bubble-theirs"
                         } ${startsGroup ? "" : mine ? "rounded-tr-[18px]" : "rounded-tl-[18px]"} ${
                           endsGroup ? "" : mine ? "rounded-br-[18px]" : "rounded-bl-[18px]"
                         }`}
@@ -1245,8 +1258,10 @@ function ChatPage() {
 
         <div
           ref={composerDockRef}
-          className={`chat-composer-dock sticky bottom-0 z-30 shrink-0 border-t subtle-divider bg-black/24 px-3 md:px-6 ${
-            keyboardVisible ? "pb-2 pt-2" : "mobile-dock-padding py-3 md:py-5"
+          className={`chat-composer-dock sticky bottom-[max(0.35rem,env(safe-area-inset-bottom))] z-30 shrink-0 px-3 md:px-6 ${
+            keyboardVisible
+              ? "pb-1.5 pt-1.5"
+              : "pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 md:pt-3"
           }`}
         >
           {replyTarget && (
@@ -1283,7 +1298,7 @@ function ChatPage() {
           )}
 
           <div className="mx-auto max-w-3xl">
-            <div className="glass-dock flex items-end gap-2 rounded-[28px] px-2.5 py-2.5 md:px-4 md:py-4">
+            <div className="glass-dock premium-elevated flex items-end gap-2 rounded-[30px] px-2.5 py-2.5 md:px-4 md:py-4">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1299,12 +1314,12 @@ function ChatPage() {
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="interactive-surface premium-elevated inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11"
-                aria-label="Send image"
+                aria-label="Attach media"
               >
-                <ImageIcon className="h-4.5 w-4.5" />
+                <Plus className="h-4.5 w-4.5" />
               </button>
 
-              <div className="min-w-0 flex-1 rounded-[24px] border border-white/10 bg-black/20 px-3.5 py-2.5 md:px-4">
+              <div className="composer-input-shell min-w-0 flex-1 rounded-[24px] px-3.5 py-2.5 md:px-4">
                 <textarea
                   ref={textareaRef}
                   value={text}
@@ -1338,21 +1353,30 @@ function ChatPage() {
                   <Send className="h-4 w-4" />
                 </button>
               ) : (
-                <button
-                  onMouseDown={() => void startRecording()}
-                  onMouseUp={stopRecording}
-                  onMouseLeave={recording ? stopRecording : undefined}
-                  onTouchStart={() => void startRecording()}
-                  onTouchEnd={stopRecording}
-                  className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl quiet-hover md:h-11 md:w-11 ${
-                    recording
-                      ? "bg-destructive text-destructive-foreground shadow-[0_16px_30px_rgba(120,24,24,0.24)]"
-                      : "interactive-surface premium-elevated text-muted-foreground hover:text-foreground"
-                  }`}
-                  aria-label={recording ? "Recording - release to send" : "Hold to record voice"}
-                >
-                  <Mic className="h-4 w-4" />
-                </button>
+                <>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="interactive-surface premium-elevated inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11"
+                    aria-label="Open media picker"
+                  >
+                    <ImageIcon className="h-4.5 w-4.5" />
+                  </button>
+                  <button
+                    onMouseDown={() => void startRecording()}
+                    onMouseUp={stopRecording}
+                    onMouseLeave={recording ? stopRecording : undefined}
+                    onTouchStart={() => void startRecording()}
+                    onTouchEnd={stopRecording}
+                    className={`inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl quiet-hover md:h-11 md:w-11 ${
+                      recording
+                        ? "bg-destructive text-destructive-foreground shadow-[0_16px_30px_rgba(120,24,24,0.24)]"
+                        : "interactive-surface premium-elevated text-muted-foreground hover:text-foreground"
+                    }`}
+                    aria-label={recording ? "Recording - release to send" : "Hold to record voice"}
+                  >
+                    <Mic className="h-4 w-4" />
+                  </button>
+                </>
               )}
             </div>
 

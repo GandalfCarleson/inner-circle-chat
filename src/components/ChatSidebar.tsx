@@ -11,7 +11,16 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar } from "@/components/Avatar";
 import { NewChatDialog } from "@/components/NewChatDialog";
-import { MessageCircle, Users, Settings, LogOut, Plus, Sparkles, Search } from "lucide-react";
+import {
+  MessageCircle,
+  Users,
+  UserRound,
+  LogOut,
+  Plus,
+  Sparkles,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 
 interface Props {
@@ -191,7 +200,7 @@ export function ChatSidebar({ activeId }: Props) {
     "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11 h-12 w-12 premium-elevated";
 
   return (
-    <aside className="app-shell-bg shell-noise relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border md:w-[27rem] md:flex-row md:rounded-[34px]">
+    <aside className="screen-theme-inbox inbox-shell-bg shell-noise screen-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border md:w-[27rem] md:flex-row md:rounded-[34px]">
       <div className="hidden w-[5.5rem] flex-col items-center justify-between border-r subtle-divider bg-black/16 px-4 py-5 md:flex">
         <div className="flex flex-col items-center gap-4">
           <Link
@@ -206,8 +215,8 @@ export function ChatSidebar({ activeId }: Props) {
         </div>
 
         <div className="flex flex-col items-center gap-3">
-          <Link to="/settings" className={navButtonClass} aria-label="Settings">
-            <Settings className="h-4 w-4" />
+          <Link to="/settings" className={navButtonClass} aria-label="Profile">
+            <UserRound className="h-4 w-4" />
           </Link>
           <button
             onClick={async () => {
@@ -224,11 +233,18 @@ export function ChatSidebar({ activeId }: Props) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="safe-top-tight border-b subtle-divider px-4 pb-4 pt-3 md:px-5 md:pb-5 md:pt-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="lux-kicker">Void</p>
-              <h2 className="lux-title mt-2 text-[1.6rem]">Inbox</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Private conversations, elevated.</p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar
+                name={profile?.display_name || profile?.username || "Void"}
+                url={profile?.avatar_url}
+                size="sm"
+                className="h-11 w-11"
+              />
+              <div>
+                <p className="lux-kicker">Void</p>
+                <h2 className="lux-title mt-1.5 text-[1.6rem]">Chats</h2>
+              </div>
             </div>
             <button
               type="button"
@@ -245,23 +261,43 @@ export function ChatSidebar({ activeId }: Props) {
             </button>
           </div>
 
-          <div className="glass-dock mt-4 flex items-center gap-3 rounded-[22px] px-4 py-3">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search conversations"
-              className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-            />
+          <div className="mt-4 flex items-center gap-2">
+            <div className="glass-dock flex flex-1 items-center gap-3 rounded-[22px] px-4 py-3">
+              <Search className="h-4 w-4 text-muted-foreground" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search"
+                className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+            <button
+              type="button"
+              className="search-ghost-btn interactive-surface quiet-hover inline-flex h-12 w-12 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground"
+              aria-label="Filter conversations"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
           </div>
 
           {presenceMembers.length > 0 && (
             <div className="mt-4">
               <div className="mb-2 flex items-center justify-between px-1">
-                <p className="text-[10px] uppercase tracking-[0.14em] text-white/38">Presence</p>
-                <p className="text-[10px] text-white/28">Online & recent</p>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-white/38">Active now</p>
+                <p className="text-[10px] text-white/28">{presenceMembers.length}</p>
               </div>
               <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+                <button
+                  type="button"
+                  onClick={() => setNewChatOpen(true)}
+                  className="presence-user-card quiet-hover surface-secondary flex min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-[18px] px-1.5 py-2 text-center"
+                >
+                  <div className="presence-ring flex h-12 w-12 items-center justify-center rounded-full bg-black/30 text-foreground">
+                    <Plus className="h-4 w-4" />
+                  </div>
+                  <p className="max-w-[3.5rem] truncate text-[11px] text-foreground/90">Your note</p>
+                  <p className="text-[10px] uppercase tracking-[0.08em] text-white/34">New</p>
+                </button>
                 {presenceMembers.map((member) => (
                   <button
                     key={member.id}
@@ -271,19 +307,22 @@ export function ChatSidebar({ activeId }: Props) {
                       router.navigate({ to: "/chat/$id", params: { id: member.conversationId } });
                     }}
                     disabled={!member.conversationId}
-                    className="quiet-hover flex min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-[18px] px-1.5 py-2 text-center disabled:cursor-default"
+                    data-online={member.online}
+                    className="presence-user-card quiet-hover surface-secondary flex min-w-0 shrink-0 flex-col items-center gap-1.5 rounded-[18px] px-1.5 py-2 text-center disabled:cursor-default"
                   >
                     <div className="relative">
-                      <Avatar
-                        name={member.name}
-                        url={member.avatarUrl}
-                        size="sm"
-                        className="h-12 w-12 text-[11px]"
-                      />
+                      <div className={`presence-ring ${member.online ? "is-online" : ""}`}>
+                        <Avatar
+                          name={member.name}
+                          url={member.avatarUrl}
+                          size="sm"
+                          className="h-12 w-12 text-[11px]"
+                        />
+                      </div>
                       <span
                         className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#0b1220] ${
                           member.online
-                            ? "bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.22)]"
+                            ? "online-pulse bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.22)]"
                             : "bg-white/38"
                         }`}
                       />
@@ -341,9 +380,10 @@ export function ChatSidebar({ activeId }: Props) {
                     <Link
                       to="/chat/$id"
                       params={{ id: conversation.id }}
-                      className={`quiet-hover premium-elevated flex min-h-[4.5rem] items-center gap-3 rounded-[24px] border px-3 py-3.5 ${
+                      data-active={active}
+                      className={`inbox-conversation-card quiet-hover premium-elevated flex min-h-[4.5rem] items-center gap-3 rounded-[24px] border px-3 py-3.5 ${
                         active
-                          ? "conversation-selected"
+                          ? "conversation-selected surface-highlight"
                           : "interactive-surface border-transparent hover:border-white/10"
                       }`}
                     >
@@ -401,8 +441,8 @@ export function ChatSidebar({ activeId }: Props) {
               <Link to="/friends" className={navButtonClass} aria-label="Friends">
                 <Users className="h-4 w-4" />
               </Link>
-              <Link to="/settings" className={navButtonClass} aria-label="Settings">
-                <Settings className="h-4 w-4" />
+              <Link to="/settings" className={navButtonClass} aria-label="Profile">
+                <UserRound className="h-4 w-4" />
               </Link>
               <button
                 onClick={async () => {

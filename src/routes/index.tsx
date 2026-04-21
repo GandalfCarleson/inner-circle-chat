@@ -14,7 +14,7 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   return (
-    <div className="app-shell-bg flex h-app overflow-hidden">
+    <div className="screen-theme-inbox app-shell-bg flex h-app overflow-hidden">
       <ChatSidebar />
       <main className="hidden flex-1 flex-col items-center justify-center px-8 md:flex">
         <div className="premium-panel premium-elevated max-w-md rounded-[34px] px-10 py-12 text-center">

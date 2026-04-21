@@ -2,3 +2,7 @@
 
 Supabase Database password:
 _9.qyhB?F*?T+jj
+
+npm run build:mobile
+npx cap sync ios
+npx cap open ios
