@@ -7,6 +7,16 @@ import { StatusBar, Style } from "@capacitor/status-bar";
 
 const APP_DARK_BACKGROUND = "#090c14";
 
+async function waitForWebFirstPaint() {
+  if (typeof window === "undefined") return;
+
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
 export function isNativeApp() {
   return Capacitor.isNativePlatform();
 }
@@ -34,6 +44,7 @@ export async function initializeNativeShell() {
   }
 
   try {
+    await waitForWebFirstPaint();
     await SplashScreen.hide();
   } catch (error) {
     console.warn("Failed to hide splash screen", error);

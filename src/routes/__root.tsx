@@ -1,7 +1,8 @@
 import { Outlet, Link, createRootRoute, useRouter } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
 import { CallLayer } from "@/components/calls/CallLayer";
+import { VoidSplashScreen } from "@/components/VoidSplashScreen";
 import { CallProvider } from "@/contexts/CallContext";
 import { PresenceProvider } from "@/contexts/PresenceContext";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -46,16 +47,14 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }, [user, loading, isAuthRoute, router]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
+    return <VoidSplashScreen />;
   }
   return <>{children}</>;
 }
 
 function RootComponent() {
+  const [showLaunchSplash, setShowLaunchSplash] = useState(true);
+
   useEffect(() => {
     function updateAppHeight() {
       const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
@@ -75,6 +74,16 @@ function RootComponent() {
   }, []);
 
   useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setShowLaunchSplash(false);
+    }, 1550);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, []);
+
+  useEffect(() => {
     void initializeNativeShell();
   }, []);
 
@@ -86,6 +95,7 @@ function RootComponent() {
           <AuthGate>
             <Outlet />
           </AuthGate>
+          {showLaunchSplash && <VoidSplashScreen />}
           <CallLayer />
         </CallProvider>
       </PresenceProvider>
