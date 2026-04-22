@@ -641,6 +641,306 @@
     box-shadow: 0 8px 18px rgb(36 22 57 / 0.36);
   }
 
+  .profile-constellation-layer {
+    inset: -8% -4% auto;
+    height: 72%;
+    border-radius: 1.6rem;
+    opacity: 0.74;
+  }
+
+  .friends-network-hub {
+    position: relative;
+    height: 18.6rem;
+    border-radius: 1.4rem;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 48%, rgb(131 104 214 / 0.18), transparent 58%),
+      radial-gradient(circle at 86% 20%, rgb(97 173 224 / 0.12), transparent 46%),
+      radial-gradient(circle at 10% 84%, rgb(240 168 101 / 0.06), transparent 40%),
+      linear-gradient(180deg, rgb(8 13 23 / 0.42), rgb(8 13 22 / 0.68));
+    border: 1px solid rgb(220 233 255 / 0.11);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 18px 40px rgb(0 0 0 / 0.36);
+    transition:
+      opacity 220ms ease,
+      filter 220ms ease,
+      transform 220ms ease;
+  }
+
+  .friends-network-hub.is-defocused {
+    opacity: 0.72;
+    filter: saturate(0.84) blur(0.2px);
+  }
+
+  .friends-network-hub-glow {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 50% 50%, rgb(120 98 194 / 0.2), transparent 50%),
+      radial-gradient(circle at 50% 102%, rgb(86 159 209 / 0.1), transparent 56%);
+    z-index: 1;
+  }
+
+  .friends-network-edges {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .friends-network-edge {
+    filter: drop-shadow(0 0 4px rgb(130 111 218 / 0.26));
+    animation: friends-edge-breathe 4.4s ease-in-out infinite;
+  }
+
+  .friends-network-edge.tone-violet {
+    stroke: rgb(162 132 244 / 0.9);
+  }
+
+  .friends-network-edge.tone-cyan {
+    stroke: rgb(98 196 242 / 0.9);
+  }
+
+  .friends-network-edge.tone-amber {
+    stroke: rgb(241 169 96 / 0.88);
+  }
+
+  .friends-network-edge.is-selected {
+    filter: drop-shadow(0 0 8px rgb(150 130 244 / 0.48));
+  }
+
+  .friends-network-signal {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0;
+    mix-blend-mode: screen;
+  }
+
+  .friends-network-signal.signal-outgoing {
+    background:
+      radial-gradient(circle at 50% 48%, rgb(95 196 242 / 0.28), transparent 34%),
+      radial-gradient(circle at 78% 56%, rgb(95 196 242 / 0.2), transparent 24%);
+    animation: friends-network-signal 760ms ease-out;
+  }
+
+  .friends-network-signal.signal-incoming {
+    background:
+      radial-gradient(circle at 50% 48%, rgb(168 136 255 / 0.24), transparent 36%),
+      radial-gradient(circle at 22% 44%, rgb(168 136 255 / 0.18), transparent 22%);
+    animation: friends-network-signal 760ms ease-out;
+  }
+
+  .friends-network-signal.signal-highlight {
+    background: radial-gradient(circle at 50% 48%, rgb(211 168 100 / 0.18), transparent 32%);
+    animation: friends-network-signal 720ms ease-out;
+  }
+
+  .friends-network-signal.signal-focus {
+    background: radial-gradient(circle at 50% 48%, rgb(131 104 214 / 0.14), transparent 38%);
+    animation: friends-network-signal 820ms ease-out;
+  }
+
+  .friends-network-center-node {
+    z-index: 5;
+  }
+
+  .friends-network-center-node .avatar-fallback,
+  .friends-network-center-node img {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.12),
+      0 0 24px rgb(130 107 213 / 0.48);
+  }
+
+  .friends-network-user-node {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.26rem;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    z-index: 4;
+    animation: friends-node-idle var(--node-drift-duration, 8s) ease-in-out infinite;
+    transition:
+      transform 180ms ease,
+      filter 180ms ease,
+      opacity 180ms ease;
+  }
+
+  .friends-network-user-node .avatar-fallback,
+  .friends-network-user-node img {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.06),
+      0 10px 22px rgb(0 0 0 / 0.28);
+    filter: brightness(var(--node-brightness, 0.88));
+  }
+
+  .friends-network-user-node.is-selected {
+    filter: drop-shadow(0 0 20px rgb(129 114 224 / 0.62));
+  }
+
+  .friends-network-user-node.is-selected .avatar-fallback,
+  .friends-network-user-node.is-selected img {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.13),
+      0 0 18px rgb(129 114 224 / 0.58),
+      0 12px 26px rgb(0 0 0 / 0.3);
+  }
+
+  .friends-network-user-node.is-online .avatar-fallback,
+  .friends-network-user-node.is-online img {
+    animation: friends-node-online-breathe 2.3s ease-in-out infinite;
+  }
+
+  .friends-network-user-node.is-priority .avatar-fallback,
+  .friends-network-user-node.is-priority img {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.13),
+      0 0 20px rgb(92 188 236 / 0.36),
+      0 0 24px rgb(176 133 255 / 0.3);
+  }
+
+  .friends-network-user-node.is-spawned .avatar-fallback,
+  .friends-network-user-node.is-spawned img {
+    animation: friends-node-spawn 540ms ease-out;
+  }
+
+  .friends-network-user-node.is-ghost {
+    opacity: 0.58;
+  }
+
+  .friends-network-user-node.is-ghost .avatar-fallback,
+  .friends-network-user-node.is-ghost img {
+    filter: grayscale(0.18);
+    border-color: rgb(255 255 255 / 0.08) !important;
+  }
+
+  .friends-network-user-node.is-cluster {
+    transform: translate(-50%, -50%) scale(1.02);
+    animation: none;
+  }
+
+  .friends-network-user-node:active {
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+
+  .friends-network-online-dot {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    border: 1px solid rgb(5 10 18 / 0.9);
+    background: rgb(56 224 147 / 0.92);
+    box-shadow: 0 0 0 3px rgb(56 224 147 / 0.2);
+  }
+
+  .friends-network-cluster-pill {
+    display: inline-flex;
+    min-width: 2.2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    background:
+      linear-gradient(145deg, rgb(131 104 214 / 0.56), rgb(94 145 215 / 0.42)),
+      rgb(16 22 36 / 0.78);
+    padding: 0.35rem 0.6rem;
+    font-size: 0.7rem;
+    color: rgb(243 248 255 / 0.94);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      0 12px 24px rgb(0 0 0 / 0.28);
+  }
+
+  .friends-network-node-label {
+    max-width: 3.8rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.62rem;
+    letter-spacing: 0.05em;
+    color: rgb(223 234 255 / 0.72);
+  }
+
+  .friends-network-preview {
+    position: absolute;
+    left: 50%;
+    bottom: 0.7rem;
+    z-index: 5;
+    display: flex;
+    width: calc(100% - 1rem);
+    max-width: 23rem;
+    transform: translateX(-50%);
+    align-items: center;
+    gap: 0.65rem;
+    border-radius: 0.95rem;
+    border: 1px solid rgb(220 233 255 / 0.14);
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.04), transparent 65%),
+      rgb(8 12 22 / 0.82);
+    padding: 0.55rem 0.6rem;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 10px 24px rgb(0 0 0 / 0.32);
+    backdrop-filter: blur(12px);
+  }
+
+  .friends-network-preview.is-empty {
+    justify-content: center;
+    padding: 0.75rem 0.9rem;
+  }
+
+  .friends-network-preview-action {
+    display: inline-flex;
+    min-height: 2.35rem;
+    min-width: 2.35rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgb(var(--tone-accent, 143 120 183) / 0.3);
+    background:
+      linear-gradient(180deg, rgb(var(--tone-accent, 143 120 183) / 0.3), transparent 70%),
+      rgb(15 21 35 / 0.85);
+    color: rgb(241 246 255 / 0.95);
+    transition:
+      transform 160ms ease,
+      box-shadow 160ms ease,
+      border-color 160ms ease;
+  }
+
+  .friends-network-preview-action:active {
+    transform: scale(0.97);
+  }
+
+  .friends-network-preview-action:hover {
+    border-color: rgb(var(--tone-accent, 143 120 183) / 0.46);
+    box-shadow: 0 0 16px rgb(var(--tone-accent, 143 120 183) / 0.3);
+  }
+
+  .friends-search-active {
+    border-color: rgb(var(--tone-accent-secondary, 88 105 152) / 0.24);
+    box-shadow: 0 12px 26px rgb(0 0 0 / 0.24);
+  }
+
+  .friends-list-selected {
+    border: 1px solid rgb(var(--tone-accent, 104 121 170) / 0.26);
+    background:
+      linear-gradient(145deg, rgb(var(--tone-accent, 104 121 170) / 0.16), transparent 70%),
+      rgb(var(--tone-flat, 10 15 26) / 0.32);
+  }
+
   .message-bubble-mine {
     border: 1px solid rgb(var(--tone-accent, 182 163 228) / 0.34);
     background:
@@ -726,12 +1026,37 @@
     min-height: 0;
   }
 
+  .chat-experience-shell {
+    isolation: isolate;
+    background:
+      radial-gradient(circle at 88% 12%, rgb(191 147 86 / 0.05), transparent 22rem),
+      radial-gradient(circle at 8% 86%, rgb(84 129 168 / 0.09), transparent 22rem),
+      linear-gradient(180deg, rgb(4 7 13 / 0.72), rgb(4 8 16 / 0.82));
+  }
+
+  .chat-experience-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(circle at 50% 36%, rgb(92 76 145 / 0.09), transparent 55%),
+      radial-gradient(circle at 30% 78%, rgb(72 131 168 / 0.06), transparent 44%);
+  }
+
   .chat-header-bar {
     padding-top: max(0.4rem, env(safe-area-inset-top));
     backdrop-filter: blur(18px);
     background:
       linear-gradient(180deg, rgb(255 255 255 / 0.03), transparent 60%),
       rgb(8 13 23 / 0.7);
+  }
+
+  .chat-header-anchored {
+    box-shadow:
+      inset 0 -1px 0 rgb(255 255 255 / 0.05),
+      0 12px 24px rgb(1 4 10 / 0.22);
   }
 
   .chat-viewport {
@@ -741,10 +1066,324 @@
     touch-action: pan-y;
   }
 
+  .chat-immersive-viewport::before {
+    content: "";
+    position: sticky;
+    top: 0;
+    display: block;
+    height: 1px;
+    width: 100%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
   .chat-composer-dock {
     backdrop-filter: blur(18px);
     background:
       linear-gradient(180deg, transparent, rgb(4 8 15 / 0.3));
+  }
+
+  .chat-composer-premium {
+    position: relative;
+  }
+
+  .chat-composer-premium::before {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 88%;
+    pointer-events: none;
+    background:
+      linear-gradient(180deg, transparent, rgb(4 8 15 / 0.52)),
+      radial-gradient(circle at 50% 100%, rgb(94 80 160 / 0.18), transparent 70%);
+    z-index: -1;
+  }
+
+  .chat-composer-shell {
+    border-color: rgb(var(--tone-border, 220 233 255) / 0.16);
+  }
+
+  .chat-composer-shell:focus-within {
+    border-color: rgb(var(--tone-accent, 143 120 183) / 0.36);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.08),
+      0 0 0 1px rgb(var(--tone-accent, 143 120 183) / 0.18),
+      0 16px 38px rgb(0 0 0 / 0.32);
+  }
+
+  .chat-typing-band {
+    text-shadow: 0 0 16px rgb(122 97 202 / 0.24);
+  }
+
+  .chat-send-button {
+    background:
+      linear-gradient(150deg, rgb(155 128 225 / 0.95), rgb(114 89 182 / 0.96)),
+      rgb(121 97 190 / 0.92);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.16),
+      0 16px 34px rgb(42 24 78 / 0.46),
+      0 0 18px rgb(110 85 179 / 0.3);
+  }
+
+  .chat-send-button:hover {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      0 18px 36px rgb(42 24 78 / 0.5),
+      0 0 22px rgb(110 85 179 / 0.36);
+  }
+
+  .chat-constellation-shell {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .chat-constellation-layer {
+    inset: 0;
+  }
+
+  .chat-constellation-fog {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 18% 34%, rgb(96 74 166 / 0.13), transparent 42%),
+      radial-gradient(circle at 80% 66%, rgb(80 141 186 / 0.1), transparent 40%),
+      linear-gradient(180deg, rgb(4 6 12 / 0.22), rgb(3 6 12 / 0.44));
+  }
+
+  .chat-constellation-beam {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    filter: blur(10px);
+    mix-blend-mode: screen;
+  }
+
+  .chat-constellation-beam.beam-outgoing {
+    background:
+      radial-gradient(circle at 73% 70%, rgb(82 209 255 / 0.28), transparent 26%),
+      linear-gradient(160deg, transparent 36%, rgb(106 174 240 / 0.15) 52%, transparent 68%);
+    animation: chat-beam-outgoing 760ms ease-out;
+  }
+
+  .chat-constellation-beam.beam-incoming {
+    background:
+      radial-gradient(circle at 20% 34%, rgb(182 130 255 / 0.3), transparent 28%),
+      linear-gradient(20deg, transparent 34%, rgb(151 106 236 / 0.16) 50%, transparent 66%);
+    animation: chat-beam-incoming 760ms ease-out;
+  }
+
+  .chat-constellation-beam.beam-typing {
+    background:
+      radial-gradient(circle at 68% 78%, rgb(243 172 110 / 0.24), transparent 24%),
+      radial-gradient(circle at 58% 70%, rgb(122 100 202 / 0.14), transparent 28%);
+    animation: chat-beam-typing 680ms ease-out;
+  }
+
+  .chat-constellation-beam.beam-focus {
+    background:
+      radial-gradient(circle at 50% 38%, rgb(132 108 221 / 0.18), transparent 32%),
+      radial-gradient(circle at 36% 62%, rgb(95 193 242 / 0.1), transparent 30%);
+    animation: chat-beam-focus 860ms ease-out;
+  }
+
+  .constellation-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .constellation-lines {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .constellation-edge {
+    stroke-width: 0.24;
+    opacity: 0.28;
+    filter: drop-shadow(0 0 2px rgb(133 104 219 / 0.26));
+    transition: opacity 220ms ease;
+  }
+
+  .constellation-edge.edge-soft {
+    opacity: 0.22;
+  }
+
+  .constellation-edge.edge-mid {
+    opacity: 0.3;
+  }
+
+  .constellation-edge.edge-strong {
+    opacity: 0.4;
+  }
+
+  .constellation-node-layer {
+    position: absolute;
+    inset: 0;
+  }
+
+  .constellation-node {
+    position: absolute;
+    width: var(--constellation-node-size);
+    height: var(--constellation-node-size);
+    transform: translate(-50%, -50%);
+    border-radius: 999px;
+    background: rgb(189 174 255 / 0.85);
+    box-shadow:
+      0 0 0 1px rgb(235 242 255 / 0.08),
+      0 0 16px rgb(149 131 234 / 0.56);
+    animation:
+      constellation-node-drift 4.8s ease-in-out infinite,
+      constellation-node-breathe 3.4s ease-in-out infinite;
+    animation-delay: var(--constellation-drift-delay), var(--constellation-drift-delay);
+    will-change: transform, opacity;
+  }
+
+  .constellation-node::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 999px;
+    opacity: 0.64;
+    filter: blur(5px);
+    background: radial-gradient(circle at center, currentColor, transparent 70%);
+  }
+
+  .constellation-node.tone-violet {
+    background: rgb(167 139 247 / 0.93);
+    color: rgb(158 128 243 / 0.84);
+  }
+
+  .constellation-node.tone-magenta {
+    background: rgb(200 126 252 / 0.93);
+    color: rgb(190 118 244 / 0.78);
+  }
+
+  .constellation-node.tone-cyan {
+    background: rgb(95 220 255 / 0.95);
+    color: rgb(95 193 242 / 0.76);
+  }
+
+  .constellation-node.tone-amber {
+    background: rgb(248 164 83 / 0.92);
+    color: rgb(238 156 77 / 0.72);
+  }
+
+  .constellation-node.tone-neutral {
+    background: rgb(154 172 240 / 0.82);
+    color: rgb(138 161 231 / 0.62);
+  }
+
+  .constellation-node.is-highlighted {
+    box-shadow:
+      0 0 0 1px rgb(244 248 255 / 0.12),
+      0 0 20px rgb(157 132 242 / 0.74),
+      0 0 36px rgb(84 203 255 / 0.38);
+    animation-duration: 3.8s, 2.6s;
+  }
+
+  .constellation-wave {
+    position: absolute;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    filter: blur(8px);
+    animation: constellation-wave-pop 900ms ease-out;
+  }
+
+  .constellation-wave.wave-focus {
+    left: 42%;
+    top: 28%;
+    width: 9rem;
+    height: 9rem;
+    background: radial-gradient(circle at center, rgb(146 121 224 / 0.32), transparent 72%);
+  }
+
+  .constellation-wave.wave-outgoing {
+    left: 62%;
+    top: 68%;
+    width: 8rem;
+    height: 8rem;
+    background: radial-gradient(circle at center, rgb(99 207 246 / 0.34), transparent 72%);
+  }
+
+  .constellation-wave.wave-incoming {
+    left: 16%;
+    top: 30%;
+    width: 8rem;
+    height: 8rem;
+    background: radial-gradient(circle at center, rgb(184 142 255 / 0.34), transparent 72%);
+  }
+
+  .constellation-wave.wave-typing {
+    left: 46%;
+    top: 74%;
+    width: 7rem;
+    height: 7rem;
+    background: radial-gradient(circle at center, rgb(244 172 98 / 0.28), transparent 72%);
+  }
+
+  .constellation-wave.wave-highlight {
+    left: 48%;
+    top: 44%;
+    width: 9rem;
+    height: 9rem;
+    background: radial-gradient(circle at center, rgb(176 135 255 / 0.36), transparent 72%);
+  }
+
+  .constellation-vignette {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(circle at 50% 50%, transparent 20%, rgb(7 10 17 / 0.24) 62%, rgb(5 7 13 / 0.42));
+  }
+
+  .constellation-mode-inbox .constellation-lines {
+    opacity: 0.62;
+  }
+
+  .constellation-mode-inbox .constellation-vignette {
+    background:
+      radial-gradient(circle at 50% 36%, transparent 22%, rgb(7 10 17 / 0.16) 60%, rgb(6 9 15 / 0.28));
+  }
+
+  .constellation-mode-chat .constellation-lines {
+    opacity: 0.85;
+  }
+
+  .constellation-mode-chat .constellation-vignette {
+    background:
+      radial-gradient(circle at 48% 44%, rgb(6 9 16 / 0.06), rgb(6 9 16 / 0.28) 56%, rgb(4 7 13 / 0.42));
+  }
+
+  .constellation-mode-chat[data-signal="typing"] .constellation-edge,
+  .constellation-mode-chat[data-signal="incoming"] .constellation-edge,
+  .constellation-mode-chat[data-signal="outgoing"] .constellation-edge {
+    animation: constellation-edge-flash 640ms ease-out;
+  }
+
+  .constellation-mode-profile .constellation-lines {
+    opacity: 0.66;
+  }
+
+  .constellation-mode-profile .constellation-vignette {
+    background:
+      radial-gradient(circle at 50% 24%, transparent 18%, rgb(9 10 16 / 0.2) 58%, rgb(8 9 14 / 0.35));
+  }
+
+  .constellation-mode-friends .constellation-lines {
+    opacity: 0.72;
+  }
+
+  .constellation-mode-friends .constellation-vignette {
+    background:
+      radial-gradient(circle at 50% 48%, transparent 14%, rgb(8 11 19 / 0.16) 62%, rgb(6 9 14 / 0.3));
   }
 
   .void-splash {
@@ -943,9 +1582,136 @@
   }
 }
 
+@keyframes friends-node-idle {
+  0%,
+  100% {
+    transform: translate(-50%, -50%);
+  }
+  50% {
+    transform: translate(
+      calc(-50% + var(--node-drift-distance, 1px)),
+      calc(-50% - var(--node-drift-distance, 1px))
+    );
+  }
+}
+
+@keyframes friends-edge-breathe {
+  0%,
+  100% {
+    stroke-opacity: 0.46;
+  }
+  50% {
+    stroke-opacity: 0.72;
+  }
+}
+
+@keyframes friends-network-signal {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  38% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes friends-node-online-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.08),
+      0 8px 20px rgb(0 0 0 / 0.28),
+      0 0 0 0 rgb(56 224 147 / 0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.12),
+      0 10px 22px rgb(0 0 0 / 0.3),
+      0 0 0 6px rgb(56 224 147 / 0.08);
+  }
+}
+
+@keyframes friends-node-spawn {
+  0% {
+    transform: scale(0.72);
+    opacity: 0;
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.2),
+      0 0 18px rgb(167 139 247 / 0.6);
+  }
+  68% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 @keyframes void-loader-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-beam-outgoing {
+  0% {
+    opacity: 0;
+    transform: translateY(5px) scale(0.96);
+  }
+  32% {
+    opacity: 0.92;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-5px) scale(1.05);
+  }
+}
+
+@keyframes chat-beam-incoming {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  35% {
+    opacity: 0.88;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(4px) scale(1.04);
+  }
+}
+
+@keyframes chat-beam-typing {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  45% {
+    opacity: 0.74;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes chat-beam-focus {
+  0% {
+    opacity: 0;
+    transform: scale(0.93);
+  }
+  36% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.03);
   }
 }
 
@@ -982,6 +1748,66 @@
   50% {
     transform: scale(1.14);
     opacity: 1;
+  }
+}
+
+@keyframes constellation-node-drift {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate(-50%, -50%)
+      translate3d(var(--constellation-drift-x), var(--constellation-drift-y), 0);
+  }
+}
+
+@keyframes constellation-node-breathe {
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes constellation-wave-pop {
+  0% {
+    opacity: 0.58;
+    transform: scale(0.86);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@keyframes constellation-edge-flash {
+  0% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0.26;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .constellation-node,
+  .constellation-wave,
+  .constellation-edge,
+  .chat-constellation-beam,
+  .friends-network-edge,
+  .friends-network-signal,
+  .friends-network-user-node,
+  .friends-network-user-node .avatar-fallback,
+  .friends-network-user-node img,
+  .void-node-pulse-main,
+  .void-node-pulse-a,
+  .void-node-pulse-b,
+  .void-node-pulse-c,
+  .void-splash-loader {
+    animation: none !important;
   }
 }
 

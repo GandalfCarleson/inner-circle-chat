@@ -1,13 +1,23 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { formatDistanceToNowStrict } from "date-fns";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, MessageCircle, Search, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { type ConstellationSignal } from "@/components/constellation/ConstellationLayer";
+import {
+  FriendsNetworkHub,
+} from "@/components/constellation/FriendsNetworkHub";
 import { MobileDock } from "@/components/MobileDock";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePresence } from "@/contexts/PresenceContext";
+import {
+  useSocialGraph,
+  type SocialGraphNode,
+} from "@/hooks/useSocialGraph";
 import { supabase } from "@/integrations/supabase/client";
-import { findOrCreateDM } from "@/lib/messaging";
+import { findOrCreateDM, listConversations } from "@/lib/messaging";
 
 export const Route = createFileRoute("/friends")({
   head: () => ({
@@ -31,14 +41,69 @@ interface FriendshipRow {
   other: ProfileSummary | null;
 }
 
+interface FriendInteractionMetric {
+  conversationId: string | null;
+  totalMessages: number;
+  lastMessageAt: string | null;
+}
+
+async function countMessagesByConversation(
+  conversationIds: string[],
+): Promise<Record<string, number>> {
+  const uniqueConversationIds = Array.from(new Set(conversationIds.filter(Boolean)));
+  if (uniqueConversationIds.length === 0) return {};
+
+  const counts: Record<string, number> = {};
+  const concurrency = Math.min(6, uniqueConversationIds.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < uniqueConversationIds.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      const conversationId = uniqueConversationIds[currentIndex];
+
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", conversationId);
+
+      if (error) {
+        console.error("Failed to count conversation messages", { conversationId, error });
+        continue;
+      }
+      counts[conversationId] = count ?? 0;
+    }
+  }
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
+  return counts;
+}
+
 function FriendsPage() {
   const { user } = useAuth();
+  const { isUserOnline } = usePresence();
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<ProfileSummary[]>([]);
   const [friends, setFriends] = useState<FriendshipRow[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [selectedNetworkFriendId, setSelectedNetworkFriendId] = useState<string | null>(null);
+  const [friendMetricsById, setFriendMetricsById] = useState<Record<string, FriendInteractionMetric>>(
+    {},
+  );
+  const [spawnedFriendIds, setSpawnedFriendIds] = useState<Record<string, true>>({});
+  const [constellationSignal, setConstellationSignal] = useState<ConstellationSignal>({
+    kind: "focus",
+    key: 0,
+  });
+  const acceptedSnapshotRef = useRef<Set<string>>(new Set());
+  const spawnClearTimerRef = useRef<number | null>(null);
+
+  function emitConstellationSignal(kind: ConstellationSignal["kind"]) {
+    setConstellationSignal((current) => ({ kind, key: current.key + 1 }));
+  }
 
   async function loadFriends() {
     if (!user) {
@@ -141,6 +206,7 @@ function FriendsPage() {
       if (error) throw error;
 
       toast.success("Friend request sent");
+      emitConstellationSignal("outgoing");
       await loadFriends();
     } catch (error) {
       console.error("Failed to send friend request", error);
@@ -181,13 +247,285 @@ function FriendsPage() {
     }
   }
 
-  const incoming = friends.filter(
-    (friendship) => friendship.status === "pending" && friendship.addressee_id === user?.id,
+  const incoming = useMemo(
+    () =>
+      friends.filter(
+        (friendship) => friendship.status === "pending" && friendship.addressee_id === user?.id,
+      ),
+    [friends, user?.id],
   );
-  const outgoing = friends.filter(
-    (friendship) => friendship.status === "pending" && friendship.requester_id === user?.id,
+  const outgoing = useMemo(
+    () =>
+      friends.filter(
+        (friendship) => friendship.status === "pending" && friendship.requester_id === user?.id,
+      ),
+    [friends, user?.id],
   );
-  const accepted = friends.filter((friendship) => friendship.status === "accepted");
+  const accepted = useMemo(
+    () => friends.filter((friendship) => friendship.status === "accepted"),
+    [friends],
+  );
+  const acceptedFriends = useMemo(
+    () => accepted.filter((friendship) => Boolean(friendship.other)),
+    [accepted],
+  );
+  const acceptedFriendIdsSignature = useMemo(
+    () =>
+      acceptedFriends
+        .map((friendship) => friendship.other!.id)
+        .sort()
+        .join(","),
+    [acceptedFriends],
+  );
+
+  useEffect(() => {
+    const userId = user?.id;
+    if (!userId) {
+      setFriendMetricsById({});
+      return;
+    }
+    let cancelled = false;
+
+    async function loadFriendMetrics() {
+      try {
+        const conversations = await listConversations(userId);
+        if (cancelled) return;
+
+        const dmRows = conversations
+          .filter((conversation) => conversation.type === "dm")
+          .map((conversation) => {
+            const otherMember = conversation.members.find((member) => member.user_id !== userId);
+            if (!otherMember) return null;
+            return {
+              friendId: otherMember.user_id,
+              conversationId: conversation.id,
+              lastMessageAt: conversation.last_message?.created_at ?? conversation.updated_at,
+            };
+          })
+          .filter((row): row is { friendId: string; conversationId: string; lastMessageAt: string } =>
+            Boolean(row),
+          );
+
+        const countsByConversation = await countMessagesByConversation(
+          dmRows.map((row) => row.conversationId),
+        );
+        if (cancelled) return;
+
+        const nextMetrics: Record<string, FriendInteractionMetric> = {};
+        for (const row of dmRows) {
+          const previous = nextMetrics[row.friendId];
+          if (
+            previous &&
+            previous.lastMessageAt &&
+            new Date(previous.lastMessageAt).getTime() > new Date(row.lastMessageAt).getTime()
+          ) {
+            continue;
+          }
+
+          nextMetrics[row.friendId] = {
+            conversationId: row.conversationId,
+            totalMessages: countsByConversation[row.conversationId] ?? previous?.totalMessages ?? 0,
+            lastMessageAt: row.lastMessageAt,
+          };
+        }
+
+        for (const friendship of acceptedFriends) {
+          const friendId = friendship.other?.id;
+          if (!friendId || nextMetrics[friendId]) continue;
+          nextMetrics[friendId] = {
+            conversationId: null,
+            totalMessages: 0,
+            lastMessageAt: null,
+          };
+        }
+
+        setFriendMetricsById(nextMetrics);
+      } catch (error) {
+        console.error("Failed to load social graph metrics", error);
+        if (!cancelled) {
+          const fallbackMetrics: Record<string, FriendInteractionMetric> = {};
+          for (const friendship of acceptedFriends) {
+            const friendId = friendship.other?.id;
+            if (!friendId) continue;
+            fallbackMetrics[friendId] = {
+              conversationId: null,
+              totalMessages: 0,
+              lastMessageAt: null,
+            };
+          }
+          setFriendMetricsById(fallbackMetrics);
+        }
+      }
+    }
+
+    void loadFriendMetrics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [acceptedFriendIdsSignature, acceptedFriends, user?.id]);
+
+  const dmConversationToFriendId = useMemo(() => {
+    const pairs = Object.entries(friendMetricsById)
+      .filter(([, metric]) => Boolean(metric.conversationId))
+      .map(([friendId, metric]) => [metric.conversationId!, friendId]);
+    return Object.fromEntries(pairs) as Record<string, string>;
+  }, [friendMetricsById]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (Object.keys(dmConversationToFriendId).length === 0) return;
+
+    const channel = supabase
+      .channel(`friends-graph:${user.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const inserted = payload.new as {
+          conversation_id: string;
+          created_at: string;
+          sender_id: string;
+        };
+        const friendId = dmConversationToFriendId[inserted.conversation_id];
+        if (!friendId) return;
+
+        setFriendMetricsById((current) => {
+          const previous = current[friendId] ?? {
+            conversationId: inserted.conversation_id,
+            totalMessages: 0,
+            lastMessageAt: null,
+          };
+          return {
+            ...current,
+            [friendId]: {
+              conversationId: inserted.conversation_id,
+              totalMessages: previous.totalMessages + 1,
+              lastMessageAt: inserted.created_at,
+            },
+          };
+        });
+
+        emitConstellationSignal(inserted.sender_id === user.id ? "outgoing" : "incoming");
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [dmConversationToFriendId, user?.id]);
+
+  useEffect(() => {
+    const currentAcceptedIds = new Set(acceptedFriends.map((friendship) => friendship.other!.id));
+    const previouslyAcceptedIds = acceptedSnapshotRef.current;
+    const newlyAcceptedIds = Array.from(currentAcceptedIds).filter((id) => !previouslyAcceptedIds.has(id));
+
+    acceptedSnapshotRef.current = currentAcceptedIds;
+    if (newlyAcceptedIds.length === 0) return;
+
+    setSpawnedFriendIds((current) => {
+      const next = { ...current };
+      for (const addedId of newlyAcceptedIds) {
+        next[addedId] = true;
+      }
+      return next;
+    });
+    emitConstellationSignal("incoming");
+
+    if (spawnClearTimerRef.current) {
+      window.clearTimeout(spawnClearTimerRef.current);
+    }
+    spawnClearTimerRef.current = window.setTimeout(() => {
+      setSpawnedFriendIds({});
+      spawnClearTimerRef.current = null;
+    }, 1450);
+  }, [acceptedFriendIdsSignature, acceptedFriends]);
+
+  useEffect(() => {
+    return () => {
+      if (spawnClearTimerRef.current) {
+        window.clearTimeout(spawnClearTimerRef.current);
+      }
+    };
+  }, []);
+
+  const socialConnections = useMemo(() => {
+    return acceptedFriends
+      .filter((friendship) => Boolean(friendship.other))
+      .map((friendship) => {
+        const other = friendship.other!;
+        const metric = friendMetricsById[other.id];
+        return {
+          id: other.id,
+          name: other.display_name || other.username,
+          username: other.username,
+          avatarUrl: other.avatar_url,
+          totalMessages: metric?.totalMessages ?? 0,
+          lastMessageAt: metric?.lastMessageAt ?? null,
+          isOnline: isUserOnline(other.id),
+          isTyping: false,
+        };
+      });
+  }, [acceptedFriends, friendMetricsById, isUserOnline]);
+
+  const { nodes: networkNodes, strongestConnectionId } = useSocialGraph({
+    connections: socialConnections,
+    maxVisibleNodes: 8,
+  });
+
+  function highlightFriendNode(friendId: string | null) {
+    if (!friendId) return;
+    setSelectedNetworkFriendId(friendId);
+    emitConstellationSignal("highlight");
+  }
+
+  function onNetworkNodePress(node: SocialGraphNode) {
+    if (node.kind === "cluster") {
+      toast.message(`${node.overflowCount ?? 0} more connections in your network.`);
+      emitConstellationSignal("focus");
+      return;
+    }
+
+    if (node.kind !== "friend" || !node.id) return;
+
+    if (selectedNetworkFriendId === node.id) {
+      void openDM(node.id);
+      return;
+    }
+
+    highlightFriendNode(node.id);
+  }
+
+  const selectedPreview = useMemo(() => {
+    if (!selectedNetworkFriendId) return null;
+    const selected = acceptedFriends.find((friendship) => friendship.other?.id === selectedNetworkFriendId);
+    if (!selected?.other) return null;
+
+    const lastInteractionAt = friendMetricsById[selected.other.id]?.lastMessageAt ?? null;
+    return {
+      id: selected.other.id,
+      name: selected.other.display_name || selected.other.username,
+      username: selected.other.username,
+      avatarUrl: selected.other.avatar_url,
+      online: isUserOnline(selected.other.id),
+      lastInteraction: lastInteractionAt
+        ? `Last chat ${formatDistanceToNowStrict(new Date(lastInteractionAt))} ago`
+        : "No recent chat",
+    };
+  }, [acceptedFriends, friendMetricsById, isUserOnline, selectedNetworkFriendId]);
+  const networkDefocused = searching || query.trim().length > 0;
+
+  useEffect(() => {
+    emitConstellationSignal("focus");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!selectedNetworkFriendId) return;
+    const stillExists = networkNodes.some(
+      (entry) => entry.kind === "friend" && entry.id === selectedNetworkFriendId,
+    );
+    if (!stillExists) {
+      setSelectedNetworkFriendId(null);
+    }
+  }, [networkNodes, selectedNetworkFriendId]);
 
   return (
     <div className="screen-theme-friends utility-shell-bg screen-enter flex h-app overflow-hidden">
@@ -203,7 +541,11 @@ function FriendsPage() {
             Add friends by username. No phone needed.
           </p>
 
-          <div className="surface-secondary mb-7 rounded-[24px] p-4">
+          <div
+            className={`surface-secondary mb-7 rounded-[24px] p-4 ${
+              networkDefocused ? "friends-search-active" : ""
+            }`}
+          >
             <div className="flex flex-col gap-2 sm:flex-row">
               <div className="relative flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -276,6 +618,19 @@ function FriendsPage() {
             )}
           </div>
 
+          <FriendsNetworkHub
+            totalFriends={accepted.length}
+            selectedFriendId={selectedNetworkFriendId}
+            strongestFriendId={strongestConnectionId}
+            signal={constellationSignal}
+            nodes={networkNodes}
+            spawnedFriendIds={spawnedFriendIds}
+            defocused={networkDefocused}
+            preview={selectedPreview}
+            onNodePress={onNetworkNodePress}
+            onOpenFriend={(friendId) => void openDM(friendId)}
+          />
+
           {incoming.length > 0 && (
             <Section title={`Requests (${incoming.length})`}>
               {incoming.map((friendship) => (
@@ -320,7 +675,10 @@ function FriendsPage() {
               accepted.map((friendship) => (
                 <li
                   key={friendship.id}
-                  className="flat-section quiet-hover flex items-center gap-3 rounded-xl p-3"
+                  onClick={() => highlightFriendNode(friendship.other?.id ?? null)}
+                  className={`flat-section quiet-hover flex cursor-pointer items-center gap-3 rounded-xl p-3 ${
+                    selectedNetworkFriendId === friendship.other?.id ? "friends-list-selected" : ""
+                  }`}
                 >
                   <Avatar
                     name={friendship.other?.display_name || friendship.other?.username || "Unknown"}

@@ -19,9 +19,11 @@ import {
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { ChatConstellationLayer } from "@/components/constellation/ChatConstellationLayer";
 import { useCallManager } from "@/contexts/CallContext";
 import { usePresence } from "@/contexts/PresenceContext";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useChatConstellation } from "@/hooks/useChatConstellation";
 import { useKeyboardVisibility } from "@/hooks/useKeyboardVisibility";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -241,7 +243,16 @@ function ChatPage() {
     ? members.find((member) => member.user_id === activeTypingUserId)?.display_name ||
       members.find((member) => member.user_id === activeTypingUserId)?.username ||
       "Someone"
-    : null;
+      : null;
+  const {
+    signal: constellationSignal,
+    highlightNodeIds,
+    emitIncomingPulse,
+    emitOutgoingPulse,
+  } = useChatConstellation({
+    conversationId: convId,
+    typingPeerActive: Boolean(activeTypingUserId),
+  });
   const headerSubtitle = useMemo(() => {
     if (typingDisplayName) return `${typingDisplayName} is typing...`;
 
@@ -307,7 +318,7 @@ function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [convId, user]);
+  }, [convId, emitIncomingPulse, emitOutgoingPulse, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -365,6 +376,7 @@ function ChatPage() {
         },
         (payload) => {
           const insertedMessage = payload.new as MessageRow;
+          const isMine = insertedMessage.sender_id === user.id;
           setMessages((current) => {
             if (current.some((message) => message.id === insertedMessage.id)) return current;
             return [...current, insertedMessage];
@@ -378,6 +390,12 @@ function ChatPage() {
               return next;
             });
           }, 260);
+
+          if (isMine) {
+            emitOutgoingPulse();
+          } else {
+            emitIncomingPulse();
+          }
         },
       )
       .on(
@@ -968,8 +986,14 @@ function ChatPage() {
         <ChatSidebar activeId={convId} />
       </div>
 
-      <main className="surface-secondary premium-border chat-main-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
-        <header className="chat-header-bar glass-dock sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
+      <main className="surface-secondary premium-border chat-main-shell chat-experience-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
+        <ChatConstellationLayer
+          signal={constellationSignal}
+          highlightNodeIds={highlightNodeIds}
+          className="opacity-[0.94]"
+        />
+
+        <header className="chat-header-bar chat-header-anchored glass-dock sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
           <div className="flex items-center gap-3">
             <Link
               to="/"
@@ -1043,7 +1067,7 @@ function ChatPage() {
 
         <div
           ref={scrollRef}
-          className="chat-viewport mobile-scroll-padding min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6"
+          className="chat-viewport chat-immersive-viewport mobile-scroll-padding relative z-10 min-h-0 flex-1 overflow-y-auto px-3 py-4 md:px-6 md:py-6"
           style={{
             scrollPaddingBottom: `calc(env(safe-area-inset-bottom) + ${composerHeight + 24}px)`,
           }}
@@ -1258,7 +1282,7 @@ function ChatPage() {
 
         <div
           ref={composerDockRef}
-          className={`chat-composer-dock sticky bottom-[max(0.35rem,env(safe-area-inset-bottom))] z-30 shrink-0 px-3 md:px-6 ${
+          className={`chat-composer-dock chat-composer-premium sticky bottom-[max(0.35rem,env(safe-area-inset-bottom))] z-30 shrink-0 px-3 md:px-6 ${
             keyboardVisible
               ? "pb-1.5 pt-1.5"
               : "pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-2 md:pt-3"
@@ -1287,7 +1311,7 @@ function ChatPage() {
           )}
 
           {typingDisplayName && (
-            <div className="mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 px-2 text-[11px] text-white/60">
+            <div className="chat-typing-band mx-auto mb-2 flex w-full max-w-3xl items-center gap-2 px-2 text-[11px] text-white/60">
               <span className="truncate uppercase tracking-[0.12em]">{typingDisplayName}</span>
               <span className="typing-dots" aria-hidden="true">
                 <span />
@@ -1298,7 +1322,7 @@ function ChatPage() {
           )}
 
           <div className="mx-auto max-w-3xl">
-            <div className="glass-dock premium-elevated flex items-end gap-2 rounded-[30px] px-2.5 py-2.5 md:px-4 md:py-4">
+            <div className="glass-dock chat-composer-shell premium-elevated flex items-end gap-2 rounded-[30px] px-2.5 py-2.5 md:px-4 md:py-4">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1347,7 +1371,7 @@ function ChatPage() {
               {text.trim() ? (
                 <button
                   onClick={() => void handleSendText()}
-                  className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_34px_rgba(30,17,58,0.32)] quiet-hover hover:translate-y-[-1px] hover:opacity-95 md:h-11 md:w-11"
+                  className="chat-send-button inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_34px_rgba(30,17,58,0.32)] quiet-hover hover:translate-y-[-1px] hover:opacity-95 md:h-11 md:w-11"
                   aria-label="Send"
                 >
                   <Send className="h-4 w-4" />

@@ -17,6 +17,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { ConstellationLayer, type ConstellationSignal } from "@/components/constellation/ConstellationLayer";
 import { MobileDock } from "@/components/MobileDock";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -82,6 +83,10 @@ function SettingsPage() {
   const [deleting, setDeleting] = useState(false);
   const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
   const [connections, setConnections] = useState<ConnectionPreview[]>([]);
+  const [constellationSignal, setConstellationSignal] = useState<ConstellationSignal>({
+    kind: "focus",
+    key: 0,
+  });
 
   useEffect(() => {
     setDisplayName(profile?.display_name ?? "");
@@ -225,6 +230,21 @@ function SettingsPage() {
   const mostInteractedConnection = connections[0] ?? null;
   const progressSeries = useMemo(() => buildProgressSeries(stats), [stats]);
 
+  function emitConstellationSignal(kind: ConstellationSignal["kind"]) {
+    setConstellationSignal((current) => ({ kind, key: current.key + 1 }));
+  }
+
+  useEffect(() => {
+    emitConstellationSignal("focus");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!mostInteractedConnection) return;
+    emitConstellationSignal("highlight");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mostInteractedConnection?.id]);
+
   function goBack() {
     if (typeof window !== "undefined" && window.history.length > 1) {
       window.history.back();
@@ -246,6 +266,7 @@ function SettingsPage() {
       if (error) throw error;
 
       toast.success("Saved");
+      emitConstellationSignal("highlight");
       await refreshProfile();
     } catch (error) {
       console.error("Failed to save profile settings", error);
@@ -298,6 +319,7 @@ function SettingsPage() {
 
       await updateAvatarField(cacheBustedUrl);
       toast.success("Avatar updated");
+      emitConstellationSignal("highlight");
     } catch (error) {
       console.error("Failed to upload avatar", error);
       toast.error(error instanceof Error ? error.message : "Couldn't upload avatar.");
@@ -314,6 +336,7 @@ function SettingsPage() {
     try {
       await updateAvatarField(null);
       toast.success("Avatar removed");
+      emitConstellationSignal("highlight");
     } catch (error) {
       console.error("Failed to remove avatar", error);
       toast.error(error instanceof Error ? error.message : "Couldn't remove avatar.");
@@ -366,8 +389,13 @@ function SettingsPage() {
 
           <div className="surface-primary premium-elevated mb-8 rounded-[30px] p-5 md:p-6">
             <div className="profile-hero-card">
+              <ConstellationLayer
+                mode="profile"
+                signal={constellationSignal}
+                className="profile-constellation-layer opacity-[0.76]"
+              />
               <div className="profile-hero-glow" />
-              <div className="profile-hero-avatar-ring">
+              <div className="profile-hero-avatar-ring relative z-10">
                 <Avatar
                   name={avatarName}
                   url={avatarPreviewUrl}
@@ -375,7 +403,7 @@ function SettingsPage() {
                   className="relative z-10 h-[5.5rem] w-[5.5rem] text-lg"
                 />
               </div>
-              <div className="mt-4 text-center">
+              <div className="relative z-10 mt-4 text-center">
                 <div className="inline-flex items-center gap-2">
                   <h1 className="lux-title text-2xl">{profile?.display_name || profile?.username}</h1>
                   <span className="profile-pro-pill">Pro</span>

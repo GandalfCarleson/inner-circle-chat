@@ -10,6 +10,7 @@ import {
 } from "@/lib/messaging";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar } from "@/components/Avatar";
+import { ConstellationLayer, type ConstellationSignal } from "@/components/constellation/ConstellationLayer";
 import { NewChatDialog } from "@/components/NewChatDialog";
 import {
   MessageCircle,
@@ -72,6 +73,14 @@ export function ChatSidebar({ activeId }: Props) {
   const [pendingFriends, setPendingFriends] = useState(0);
   const [query, setQuery] = useState("");
   const [newChatOpen, setNewChatOpen] = useState(false);
+  const [constellationSignal, setConstellationSignal] = useState<ConstellationSignal>({
+    kind: "focus",
+    key: 0,
+  });
+
+  function emitConstellationSignal(kind: ConstellationSignal["kind"]) {
+    setConstellationSignal((current) => ({ kind, key: current.key + 1 }));
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -199,9 +208,32 @@ export function ChatSidebar({ activeId }: Props) {
   const navButtonClass =
     "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11 h-12 w-12 premium-elevated";
 
+  useEffect(() => {
+    emitConstellationSignal("focus");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const unreadTotal = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
+    if (unreadTotal > 0) {
+      emitConstellationSignal("incoming");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unreadCounts]);
+
+  useEffect(() => {
+    const onlineCount = presenceMembers.filter((member) => member.online).length;
+    if (onlineCount > 0) {
+      emitConstellationSignal("typing");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presenceMembers]);
+
   return (
     <aside className="screen-theme-inbox inbox-shell-bg shell-noise screen-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border md:w-[27rem] md:flex-row md:rounded-[34px]">
-      <div className="hidden w-[5.5rem] flex-col items-center justify-between border-r subtle-divider bg-black/16 px-4 py-5 md:flex">
+      <ConstellationLayer mode="inbox" signal={constellationSignal} className="opacity-[0.62]" />
+
+      <div className="relative z-10 hidden w-[5.5rem] flex-col items-center justify-between border-r subtle-divider bg-black/16 px-4 py-5 md:flex">
         <div className="flex flex-col items-center gap-4">
           <Link
             to="/"
@@ -231,7 +263,7 @@ export function ChatSidebar({ activeId }: Props) {
         </div>
       </div>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <div className="safe-top-tight border-b subtle-divider px-4 pb-4 pt-3 md:px-5 md:pb-5 md:pt-5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
