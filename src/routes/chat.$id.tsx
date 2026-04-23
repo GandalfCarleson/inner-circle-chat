@@ -24,6 +24,7 @@ import { useCallManager } from "@/contexts/CallContext";
 import { usePresence } from "@/contexts/PresenceContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useChatConstellation } from "@/hooks/useChatConstellation";
+import { useGradient } from "@/hooks/useGradient";
 import { useKeyboardVisibility } from "@/hooks/useKeyboardVisibility";
 import type { SocialGraphConnection } from "@/hooks/useSocialGraph";
 import { useAuth } from "@/contexts/AuthContext";
@@ -358,6 +359,14 @@ function ChatPage() {
     messages.length,
     otherMembers,
   ]);
+  const chatActivityLevel = useMemo(() => {
+    const animatedCount = Object.keys(newlyAnimatedMessageIds).length;
+    const typingBoost = activeTypingUserId ? 0.5 : 0;
+    const animatedBoost = Math.min(0.45, animatedCount * 0.14);
+    const composingBoost = text.trim().length > 0 ? 0.08 : 0;
+    return Math.min(1, 0.16 + typingBoost + animatedBoost + composingBoost);
+  }, [activeTypingUserId, newlyAnimatedMessageIds, text]);
+  const chatGradient = useGradient("chat", { activity: chatActivityLevel });
   const headerSubtitle = useMemo(() => {
     if (typingDisplayName) return `${typingDisplayName} is typing...`;
 
@@ -1113,12 +1122,15 @@ function ChatPage() {
   }
 
   return (
-    <div className="screen-theme-chat chat-shell-bg screen-enter flex h-app overflow-hidden p-0 md:p-4">
+    <div
+      className="screen-theme-chat chat-shell-bg screen-enter immersive-root dynamic-gradient-transition flex h-app overflow-hidden p-0 md:p-4"
+      style={chatGradient.style}
+    >
       <div className="hidden md:block md:w-[27rem] md:pr-4">
         <ChatSidebar activeId={convId} />
       </div>
 
-      <main className="surface-secondary premium-border chat-main-shell chat-experience-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
+      <main className="surface-secondary chat-main-shell chat-experience-shell mobile-edge-to-edge relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
         <ChatConstellationLayer
           signal={constellationSignal}
           connections={chatSocialConnections}
@@ -1298,7 +1310,7 @@ function ChatPage() {
                       )}
 
                       <div
-                        className={`relative overflow-hidden rounded-[24px] px-3.5 py-3 shadow-[0_14px_34px_rgba(0,0,0,0.24)] transition duration-200 active:scale-[0.99] md:rounded-[26px] md:px-4 ${
+                        className={`message-bubble-shell relative overflow-hidden rounded-[24px] px-3.5 py-3 md:rounded-[26px] md:px-4 ${
                           mine
                             ? "message-bubble-mine"
                             : "message-bubble-theirs"

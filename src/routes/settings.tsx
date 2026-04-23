@@ -20,6 +20,7 @@ import { ChatSidebar } from "@/components/ChatSidebar";
 import { ConstellationLayer, type ConstellationSignal } from "@/components/constellation/ConstellationLayer";
 import { MobileDock } from "@/components/MobileDock";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGradient } from "@/hooks/useGradient";
 import { supabase } from "@/integrations/supabase/client";
 import { buildAvatarStoragePath, resolveAvatarUrl } from "@/lib/avatar";
 import { listConversations } from "@/lib/messaging";
@@ -229,6 +230,14 @@ function SettingsPage() {
   );
   const mostInteractedConnection = connections[0] ?? null;
   const progressSeries = useMemo(() => buildProgressSeries(stats), [stats]);
+  const profileGradient = useGradient("profile", {
+    activity: Math.min(
+      1,
+      (stats.messagesSent > 0 ? 0.18 : 0.08) +
+        Math.min(0.46, stats.activeDays / 50) +
+        Math.min(0.3, connections.length / 14),
+    ),
+  });
 
   function emitConstellationSignal(kind: ConstellationSignal["kind"]) {
     setConstellationSignal((current) => ({ kind, key: current.key + 1 }));
@@ -372,7 +381,10 @@ function SettingsPage() {
   }
 
   return (
-    <div className="screen-theme-profile profile-shell-bg screen-enter flex h-app overflow-hidden">
+    <div
+      className="screen-theme-profile profile-shell-bg screen-enter immersive-root dynamic-gradient-transition flex h-app overflow-hidden"
+      style={profileGradient.style}
+    >
       <div className="hidden md:block">
         <ChatSidebar />
       </div>
@@ -387,7 +399,7 @@ function SettingsPage() {
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
 
-          <div className="surface-primary premium-elevated mb-8 rounded-[30px] p-5 md:p-6">
+          <div className="profile-hero-shell mb-8 px-1 py-1 md:px-2">
             <div className="profile-hero-card">
               <ConstellationLayer
                 mode="profile"
@@ -452,7 +464,7 @@ function SettingsPage() {
             />
           </div>
 
-          <div className="surface-secondary mb-8 rounded-[24px] p-4 md:p-5">
+          <div className="section-blend mb-8 rounded-[24px] p-4 md:p-5">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm text-foreground">Connections</h2>
               <span className="text-xs text-white/36">{connections.length} active</span>
@@ -476,7 +488,7 @@ function SettingsPage() {
                     onClick={() => {
                       router.navigate({ to: "/friends" });
                     }}
-                    className="quiet-hover surface-secondary flex shrink-0 flex-col items-center gap-1.5 rounded-[16px] px-1.5 py-2"
+                    className="quiet-hover section-blend-soft flex shrink-0 flex-col items-center gap-1.5 rounded-[16px] px-1.5 py-2"
                   >
                     <Avatar
                       name={connection.name}
@@ -510,7 +522,7 @@ function SettingsPage() {
             </div>
           </div>
 
-          <div ref={editSectionRef} className="surface-secondary mb-8 space-y-5 rounded-[28px] p-4 sm:p-5">
+          <div ref={editSectionRef} className="section-blend mb-8 space-y-5 rounded-[28px] p-4 sm:p-5">
             <div className="surface-primary rounded-[1.5rem] p-4">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <Avatar
@@ -599,7 +611,7 @@ function SettingsPage() {
             </button>
           </div>
 
-          <div className="surface-secondary mt-6 rounded-[24px] p-4 sm:p-5">
+          <div className="section-blend mt-6 rounded-[24px] p-4 sm:p-5">
             <div className="mb-2 flex items-center gap-2">
               <TriangleAlert className="h-4 w-4 text-amber-500" />
               <h2 className="text-sm text-foreground">Account</h2>

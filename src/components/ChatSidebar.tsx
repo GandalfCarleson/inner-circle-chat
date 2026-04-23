@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
 import type { SocialGraphConnection } from "@/hooks/useSocialGraph";
+import { useGradient } from "@/hooks/useGradient";
 import { countMessagesByConversationIds } from "@/lib/socialGraphData";
 
 interface Props {
@@ -259,6 +260,17 @@ export function ChatSidebar({ activeId }: Props) {
       };
     });
   }, [conversations, dmConversationRows, dmMetricsByUserId, onlineByUserId, presenceMembers]);
+  const unreadTotal = useMemo(
+    () => Object.values(unreadCounts).reduce((sum, count) => sum + count, 0),
+    [unreadCounts],
+  );
+  const onlinePresenceCount = useMemo(
+    () => presenceMembers.filter((member) => member.online).length,
+    [presenceMembers],
+  );
+  const inboxGradient = useGradient("inbox", {
+    activity: Math.min(1, unreadTotal / 10 + onlinePresenceCount / 16),
+  });
 
   const navButtonClass =
     "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11 h-12 w-12 premium-elevated";
@@ -269,20 +281,18 @@ export function ChatSidebar({ activeId }: Props) {
   }, []);
 
   useEffect(() => {
-    const unreadTotal = Object.values(unreadCounts).reduce((sum, count) => sum + count, 0);
     if (unreadTotal > 0) {
       emitConstellationSignal("incoming");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unreadCounts]);
+  }, [unreadTotal]);
 
   useEffect(() => {
-    const onlineCount = presenceMembers.filter((member) => member.online).length;
-    if (onlineCount > 0) {
+    if (onlinePresenceCount > 0) {
       emitConstellationSignal("typing");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presenceMembers]);
+  }, [onlinePresenceCount]);
 
   useEffect(() => {
     if (!user) {
@@ -316,7 +326,10 @@ export function ChatSidebar({ activeId }: Props) {
   }, [dmConversationRows, user]);
 
   return (
-    <aside className="screen-theme-inbox inbox-shell-bg shell-noise screen-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border md:w-[27rem] md:flex-row md:rounded-[34px]">
+    <aside
+      className="screen-theme-inbox inbox-shell-bg shell-noise screen-enter dynamic-gradient-transition relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border mobile-edge-to-edge md:w-[27rem] md:flex-row md:rounded-[34px]"
+      style={inboxGradient.style}
+    >
       <InboxConstellationLayer
         signal={constellationSignal}
         connections={inboxSocialConnections}

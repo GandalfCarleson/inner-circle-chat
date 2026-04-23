@@ -8,8 +8,8 @@ const config: CapacitorConfig = {
   plugins: {
     StatusBar: {
       style: "LIGHT",
-      backgroundColor: "#090c14",
-      overlaysWebView: false,
+      backgroundColor: "#00000000",
+      overlaysWebView: true,
     },
     Keyboard: {
       resize: "native",
@@ -22,7 +22,7 @@ const config: CapacitorConfig = {
       backgroundColor: "#090c14",
       showSpinner: false,
       splashFullScreen: true,
-      splashImmersive: false,
+      splashImmersive: true,
     },
     PushNotifications: {
       presentationOptions: ["badge", "sound", "alert"],

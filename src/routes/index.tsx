@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { useGradient } from "@/hooks/useGradient";
 import { MessageCircle, Sparkles, ShieldCheck, Zap, Users } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -13,8 +14,13 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
+  const inboxGradient = useGradient("inbox", { activity: 0.24 });
+
   return (
-    <div className="screen-theme-inbox app-shell-bg flex h-app overflow-hidden">
+    <div
+      className="screen-theme-inbox app-shell-bg immersive-root dynamic-gradient-transition flex h-app overflow-hidden"
+      style={inboxGradient.style}
+    >
       <ChatSidebar />
       <main className="hidden flex-1 flex-col items-center justify-center px-8 md:flex">
         <div className="premium-panel premium-elevated max-w-md rounded-[34px] px-10 py-12 text-center">

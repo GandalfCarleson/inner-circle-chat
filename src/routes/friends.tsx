@@ -12,6 +12,7 @@ import {
 import { MobileDock } from "@/components/MobileDock";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePresence } from "@/contexts/PresenceContext";
+import { useGradient } from "@/hooks/useGradient";
 import {
   useSocialGraph,
   type SocialGraphNode,
@@ -432,6 +433,13 @@ function FriendsPage() {
         };
       });
   }, [acceptedFriends, friendMetricsById, isUserOnline]);
+  const friendsGradient = useGradient("friends", {
+    activity: Math.min(
+      1,
+      socialConnections.filter((connection) => connection.isOnline).length / 8 +
+        socialConnections.length / 24,
+    ),
+  });
 
   const { nodes: networkNodes, strongestConnectionId } = useSocialGraph({
     connections: socialConnections,
@@ -496,7 +504,10 @@ function FriendsPage() {
   }, [networkNodes, selectedNetworkFriendId]);
 
   return (
-    <div className="screen-theme-friends utility-shell-bg screen-enter flex h-app overflow-hidden">
+    <div
+      className="screen-theme-friends utility-shell-bg screen-enter immersive-root dynamic-gradient-transition flex h-app overflow-hidden"
+      style={friendsGradient.style}
+    >
       <div className="hidden md:block">
         <ChatSidebar />
       </div>
@@ -510,7 +521,7 @@ function FriendsPage() {
           </p>
 
           <div
-            className={`surface-secondary mb-7 rounded-[24px] p-4 ${
+            className={`section-blend mb-7 rounded-[24px] p-4 ${
               networkDefocused ? "friends-search-active" : ""
             }`}
           >

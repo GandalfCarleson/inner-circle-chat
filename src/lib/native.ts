@@ -5,7 +5,7 @@ import { Keyboard } from "@capacitor/keyboard";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 
-const APP_DARK_BACKGROUND = "#090c14";
+const APP_TRANSPARENT = "#00000000";
 
 async function waitForWebFirstPaint() {
   if (typeof window === "undefined") return;
@@ -30,8 +30,9 @@ export async function initializeNativeShell() {
 
   try {
     await StatusBar.setStyle({ style: Style.Light });
-    await StatusBar.setBackgroundColor({ color: APP_DARK_BACKGROUND });
-    await StatusBar.setOverlaysWebView({ overlay: false });
+    await StatusBar.setBackgroundColor({ color: APP_TRANSPARENT });
+    // Full-bleed layout: let web content render beneath iOS status bar.
+    await StatusBar.setOverlaysWebView({ overlay: true });
   } catch (error) {
     console.warn("Failed to configure status bar", error);
   }
