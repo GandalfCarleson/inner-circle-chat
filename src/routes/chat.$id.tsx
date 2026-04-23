@@ -25,10 +25,12 @@ import { usePresence } from "@/contexts/PresenceContext";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useChatConstellation } from "@/hooks/useChatConstellation";
 import { useKeyboardVisibility } from "@/hooks/useKeyboardVisibility";
+import type { SocialGraphConnection } from "@/hooks/useSocialGraph";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { CALLING_ENABLED } from "@/lib/calls";
 import { downloadMedia, getMessageBody, markConversationRead, sendMessage } from "@/lib/messaging";
+import { countMessagesByConversationIds } from "@/lib/socialGraphData";
 
 export const Route = createFileRoute("/chat/$id")({
   head: () => ({
@@ -172,6 +174,42 @@ async function fetchReactionRows(messageIds: string[]) {
   return buildReactionMap(data ?? []);
 }
 
+async function countMessagesBySender(
+  conversationId: string,
+  senderIds: string[],
+): Promise<Record<string, number>> {
+  const uniqueSenderIds = Array.from(new Set(senderIds.filter(Boolean)));
+  if (uniqueSenderIds.length === 0) return {};
+
+  const counts: Record<string, number> = {};
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < uniqueSenderIds.length) {
+      const index = cursor;
+      cursor += 1;
+      const senderId = uniqueSenderIds[index];
+
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", conversationId)
+        .eq("sender_id", senderId);
+
+      if (error) {
+        console.error("Failed to count sender messages", { senderId, conversationId, error });
+        continue;
+      }
+      counts[senderId] = count ?? 0;
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(6, uniqueSenderIds.length) }, worker),
+  );
+  return counts;
+}
+
 function ChatPage() {
   const { id: convId } = useParams({ from: "/chat/$id" });
   const { user } = useAuth();
@@ -197,6 +235,10 @@ function ChatPage() {
   const [composerHeight, setComposerHeight] = useState(120);
   const [typingByUserId, setTypingByUserId] = useState<Record<string, number>>({});
   const [newlyAnimatedMessageIds, setNewlyAnimatedMessageIds] = useState<Record<string, true>>({});
+  const [conversationMessageCount, setConversationMessageCount] = useState<number | null>(null);
+  const [memberMessageCountByUserId, setMemberMessageCountByUserId] = useState<Record<string, number>>(
+    {},
+  );
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -246,13 +288,76 @@ function ChatPage() {
       : null;
   const {
     signal: constellationSignal,
-    highlightNodeIds,
     emitIncomingPulse,
     emitOutgoingPulse,
   } = useChatConstellation({
     conversationId: convId,
     typingPeerActive: Boolean(activeTypingUserId),
   });
+  const otherMemberIdsSignature = useMemo(
+    () => otherMembers.map((member) => member.user_id).sort().join(","),
+    [otherMembers],
+  );
+  const lastMessageAtBySender = useMemo(() => {
+    const next: Record<string, string> = {};
+    for (const message of messages) {
+      next[message.sender_id] = message.created_at;
+    }
+    return next;
+  }, [messages]);
+  const localMessageCountBySender = useMemo(() => {
+    const next: Record<string, number> = {};
+    for (const message of messages) {
+      next[message.sender_id] = (next[message.sender_id] ?? 0) + 1;
+    }
+    return next;
+  }, [messages]);
+  const conversationLastMessageAt = messages[messages.length - 1]?.created_at ?? null;
+  const chatSocialConnections = useMemo<SocialGraphConnection[]>(() => {
+    if (isDirectMessage && directMessageTarget) {
+      return [
+        {
+          id: directMessageTarget.user_id,
+          name: directMessageTarget.display_name || directMessageTarget.username || "Unknown",
+          username: directMessageTarget.username || "unknown",
+          avatarUrl: directMessageTarget.avatar_url,
+          totalMessages: Math.max(
+            0,
+            conversationMessageCount ?? messages.length,
+          ),
+          lastMessageAt: conversationLastMessageAt,
+          isOnline: isUserOnline(directMessageTarget.user_id),
+          isTyping: activeTypingUserId === directMessageTarget.user_id,
+        },
+      ];
+    }
+
+    return otherMembers.map((member) => ({
+      id: member.user_id,
+      name: member.display_name || member.username || "Unknown",
+      username: member.username || "unknown",
+      avatarUrl: member.avatar_url,
+      totalMessages: Math.max(
+        0,
+        memberMessageCountByUserId[member.user_id] ?? localMessageCountBySender[member.user_id] ?? 0,
+      ),
+      lastMessageAt: lastMessageAtBySender[member.user_id] ?? conversationLastMessageAt,
+      isOnline: isUserOnline(member.user_id),
+      isTyping: activeTypingUserId === member.user_id,
+    }));
+  }, [
+    activeTypingUserId,
+    conversationLastMessageAt,
+    conversationMessageCount,
+    directMessageTarget,
+    isDirectMessage,
+    isUserOnline,
+    lastMessageAtBySender,
+    localMessageCountBySender,
+    memberMessageCountByUserId,
+    messages.length,
+    otherMembers,
+  ]);
   const headerSubtitle = useMemo(() => {
     if (typingDisplayName) return `${typingDisplayName} is typing...`;
 
@@ -319,6 +424,33 @@ function ChatPage() {
       cancelled = true;
     };
   }, [convId, emitIncomingPulse, emitOutgoingPulse, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+
+    async function loadInteractionCounts() {
+      if (isDirectMessage) {
+        const totals = await countMessagesByConversationIds([convId], { limit: 1, concurrency: 1 });
+        if (cancelled) return;
+        setConversationMessageCount(totals[convId] ?? 0);
+        setMemberMessageCountByUserId({});
+        return;
+      }
+
+      const senderIds = otherMembers.map((member) => member.user_id);
+      const countsBySender = await countMessagesBySender(convId, senderIds);
+      if (cancelled) return;
+      setConversationMessageCount(null);
+      setMemberMessageCountByUserId(countsBySender);
+    }
+
+    void loadInteractionCounts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [convId, isDirectMessage, otherMemberIdsSignature, otherMembers, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -989,7 +1121,7 @@ function ChatPage() {
       <main className="surface-secondary premium-border chat-main-shell chat-experience-shell relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
         <ChatConstellationLayer
           signal={constellationSignal}
-          highlightNodeIds={highlightNodeIds}
+          connections={chatSocialConnections}
           className="opacity-[0.94]"
         />
 

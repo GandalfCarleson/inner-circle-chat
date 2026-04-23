@@ -1,19 +1,21 @@
-import { ConstellationLayer, type ConstellationSignal } from "@/components/constellation/ConstellationLayer";
+import type { ConstellationSignal } from "@/components/constellation/ConstellationLayer";
+import { SocialConstellationLayer } from "@/components/constellation/SocialConstellationLayer";
+import type { SocialGraphConnection } from "@/hooks/useSocialGraph";
 import { cn } from "@/lib/utils";
 
 interface Props {
   signal: ConstellationSignal;
-  highlightNodeIds: string[];
+  connections: SocialGraphConnection[];
   className?: string;
 }
 
-export function ChatConstellationLayer({ signal, highlightNodeIds, className }: Props) {
+export function ChatConstellationLayer({ signal, connections, className }: Props) {
   return (
     <div className={cn("chat-constellation-shell", className)} data-signal={signal.kind}>
-      <ConstellationLayer
+      <SocialConstellationLayer
         mode="chat"
         signal={signal}
-        highlightNodeIds={highlightNodeIds}
+        connections={connections}
         className="chat-constellation-layer"
       />
       <div key={`beam-${signal.kind}-${signal.key}`} className={cn("chat-constellation-beam", `beam-${signal.kind}`)} />
@@ -21,4 +23,3 @@ export function ChatConstellationLayer({ signal, highlightNodeIds, className }: 
     </div>
   );
 }
-

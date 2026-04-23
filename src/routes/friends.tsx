@@ -18,6 +18,7 @@ import {
 } from "@/hooks/useSocialGraph";
 import { supabase } from "@/integrations/supabase/client";
 import { findOrCreateDM, listConversations } from "@/lib/messaging";
+import { countMessagesByConversationIds } from "@/lib/socialGraphData";
 
 export const Route = createFileRoute("/friends")({
   head: () => ({
@@ -45,39 +46,6 @@ interface FriendInteractionMetric {
   conversationId: string | null;
   totalMessages: number;
   lastMessageAt: string | null;
-}
-
-async function countMessagesByConversation(
-  conversationIds: string[],
-): Promise<Record<string, number>> {
-  const uniqueConversationIds = Array.from(new Set(conversationIds.filter(Boolean)));
-  if (uniqueConversationIds.length === 0) return {};
-
-  const counts: Record<string, number> = {};
-  const concurrency = Math.min(6, uniqueConversationIds.length);
-  let cursor = 0;
-
-  async function worker() {
-    while (cursor < uniqueConversationIds.length) {
-      const currentIndex = cursor;
-      cursor += 1;
-      const conversationId = uniqueConversationIds[currentIndex];
-
-      const { count, error } = await supabase
-        .from("messages")
-        .select("id", { count: "exact", head: true })
-        .eq("conversation_id", conversationId);
-
-      if (error) {
-        console.error("Failed to count conversation messages", { conversationId, error });
-        continue;
-      }
-      counts[conversationId] = count ?? 0;
-    }
-  }
-
-  await Promise.all(Array.from({ length: concurrency }, worker));
-  return counts;
 }
 
 function FriendsPage() {
@@ -306,7 +274,7 @@ function FriendsPage() {
             Boolean(row),
           );
 
-        const countsByConversation = await countMessagesByConversation(
+        const countsByConversation = await countMessagesByConversationIds(
           dmRows.map((row) => row.conversationId),
         );
         if (cancelled) return;

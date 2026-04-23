@@ -10,7 +10,8 @@ import {
 } from "@/lib/messaging";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar } from "@/components/Avatar";
-import { ConstellationLayer, type ConstellationSignal } from "@/components/constellation/ConstellationLayer";
+import type { ConstellationSignal } from "@/components/constellation/ConstellationLayer";
+import { InboxConstellationLayer } from "@/components/constellation/InboxConstellationLayer";
 import { NewChatDialog } from "@/components/NewChatDialog";
 import {
   MessageCircle,
@@ -23,6 +24,8 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { formatDistanceToNowStrict } from "date-fns";
+import type { SocialGraphConnection } from "@/hooks/useSocialGraph";
+import { countMessagesByConversationIds } from "@/lib/socialGraphData";
 
 interface Props {
   activeId?: string;
@@ -73,6 +76,9 @@ export function ChatSidebar({ activeId }: Props) {
   const [pendingFriends, setPendingFriends] = useState(0);
   const [query, setQuery] = useState("");
   const [newChatOpen, setNewChatOpen] = useState(false);
+  const [dmMetricsByUserId, setDmMetricsByUserId] = useState<
+    Record<string, { totalMessages: number; lastMessageAt: string | null }>
+  >({});
   const [constellationSignal, setConstellationSignal] = useState<ConstellationSignal>({
     kind: "focus",
     key: 0,
@@ -204,6 +210,55 @@ export function ChatSidebar({ activeId }: Props) {
       })
       .slice(0, 12);
   }, [conversations, lastSeenByUserId, onlineByUserId, user]);
+  const dmConversationRows = useMemo(() => {
+    if (!user) return [];
+    return conversations
+      .filter((conversation) => conversation.type === "dm")
+      .map((conversation) => {
+        const other = conversation.members.find((member) => member.user_id !== user.id);
+        if (!other) return null;
+        return {
+          conversationId: conversation.id,
+          friendId: other.user_id,
+          lastMessageAt: conversation.last_message?.created_at ?? conversation.updated_at,
+        };
+      })
+      .filter(
+        (
+          row,
+        ): row is { conversationId: string; friendId: string; lastMessageAt: string } => Boolean(row),
+      )
+      .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
+      .slice(0, 14);
+  }, [conversations, user]);
+  const inboxSocialConnections = useMemo<SocialGraphConnection[]>(() => {
+    return dmConversationRows.map((row) => {
+      const member = presenceMembers.find((candidate) => candidate.id === row.friendId);
+      const conversation = conversations.find((candidate) => candidate.id === row.conversationId);
+      const otherFromConversation =
+        conversation?.members.find((candidate) => candidate.user_id === row.friendId) ?? null;
+      const metric = dmMetricsByUserId[row.friendId];
+
+      const name =
+        member?.name ||
+        otherFromConversation?.display_name ||
+        otherFromConversation?.username ||
+        "Unknown";
+      const username = otherFromConversation?.username || "unknown";
+      const avatarUrl = member?.avatarUrl ?? otherFromConversation?.avatar_url ?? null;
+      const lastMessageAt = metric?.lastMessageAt ?? row.lastMessageAt;
+      return {
+        id: row.friendId,
+        name,
+        username,
+        avatarUrl,
+        totalMessages: metric?.totalMessages ?? 0,
+        lastMessageAt,
+        isOnline: Boolean(onlineByUserId[row.friendId]),
+        isTyping: false,
+      };
+    });
+  }, [conversations, dmConversationRows, dmMetricsByUserId, onlineByUserId, presenceMembers]);
 
   const navButtonClass =
     "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11 h-12 w-12 premium-elevated";
@@ -229,9 +284,44 @@ export function ChatSidebar({ activeId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presenceMembers]);
 
+  useEffect(() => {
+    if (!user) {
+      setDmMetricsByUserId({});
+      return;
+    }
+    let cancelled = false;
+
+    async function loadDmMetrics() {
+      const countsByConversation = await countMessagesByConversationIds(
+        dmConversationRows.map((row) => row.conversationId),
+        { limit: 14, concurrency: 6 },
+      );
+      if (cancelled) return;
+
+      const nextMetrics: Record<string, { totalMessages: number; lastMessageAt: string | null }> = {};
+      for (const row of dmConversationRows) {
+        nextMetrics[row.friendId] = {
+          totalMessages: countsByConversation[row.conversationId] ?? 0,
+          lastMessageAt: row.lastMessageAt,
+        };
+      }
+      setDmMetricsByUserId(nextMetrics);
+    }
+
+    void loadDmMetrics();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dmConversationRows, user]);
+
   return (
     <aside className="screen-theme-inbox inbox-shell-bg shell-noise screen-enter relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border md:w-[27rem] md:flex-row md:rounded-[34px]">
-      <ConstellationLayer mode="inbox" signal={constellationSignal} className="opacity-[0.62]" />
+      <InboxConstellationLayer
+        signal={constellationSignal}
+        connections={inboxSocialConnections}
+        className="opacity-[0.72]"
+      />
 
       <div className="relative z-10 hidden w-[5.5rem] flex-col items-center justify-between border-r subtle-divider bg-black/16 px-4 py-5 md:flex">
         <div className="flex flex-col items-center gap-4">
