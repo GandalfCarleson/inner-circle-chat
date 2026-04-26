@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { dispatchNewMessagePush } from "@/lib/push";
+import { computeExpiryIso } from "@/lib/voidMode";
 
 // Legacy schema note:
 // `ciphertext`, `nonce`, and `recipient_keys` are historical encryption-era columns.
@@ -24,6 +25,9 @@ export interface ConversationSummary {
     recipient_keys: Record<string, string>;
     sender_id: string;
     type: string;
+    is_void_mode: boolean;
+    void_expires_at: string | null;
+    void_duration_seconds: number | null;
     created_at: string;
   } | null;
 }
@@ -33,7 +37,23 @@ interface RawConversationMember {
   user_id: string;
 }
 
-export function getMessageBody(message: Pick<ConversationSummary["last_message"], "ciphertext"> | { ciphertext: string }) {
+function isMissingVoidColumnsError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+
+  const candidate = error as { code?: string; message?: string };
+  if (candidate.code !== "42703") return false;
+
+  const message = candidate.message ?? "";
+  return (
+    message.includes("is_void_mode") ||
+    message.includes("void_expires_at") ||
+    message.includes("void_duration_seconds")
+  );
+}
+
+export function getMessageBody(
+  message: Pick<ConversationSummary["last_message"], "ciphertext"> | { ciphertext: string },
+) {
   return message.ciphertext ?? "";
 }
 
@@ -56,13 +76,17 @@ export async function listUnreadCounts(userId: string): Promise<Record<string, n
   if (conversationIds.length === 0) return {};
 
   const lastReadAtByConversation = new Map(
-    (memberships ?? []).map((membership) => [membership.conversation_id, membership.last_read_at ?? null]),
+    (memberships ?? []).map((membership) => [
+      membership.conversation_id,
+      membership.last_read_at ?? null,
+    ]),
   );
 
   const { data: messages, error: messageError } = await supabase
     .from("messages")
     .select("conversation_id, sender_id, created_at")
     .in("conversation_id", conversationIds)
+    .or("expires_at.is.null,expires_at.gt.now()")
     .neq("sender_id", userId);
   if (messageError) throw messageError;
 
@@ -87,7 +111,10 @@ export async function markConversationRead(
 
   if (!latestIncomingMessage) return lastReadAt ?? null;
 
-  if (lastReadAt && new Date(latestIncomingMessage.created_at).getTime() <= new Date(lastReadAt).getTime()) {
+  if (
+    lastReadAt &&
+    new Date(latestIncomingMessage.created_at).getTime() <= new Date(lastReadAt).getTime()
+  ) {
     return lastReadAt;
   }
 
@@ -114,7 +141,10 @@ export async function markConversationRead(
 
 function mapConversationMember(
   member: RawConversationMember,
-  profileById: Map<string, { username: string; display_name: string | null; avatar_url: string | null }>,
+  profileById: Map<
+    string,
+    { username: string; display_name: string | null; avatar_url: string | null }
+  >,
 ) {
   const profile = profileById.get(member.user_id);
   return {
@@ -151,7 +181,10 @@ export async function listConversations(userId: string): Promise<ConversationSum
   if (allMembersError) throw allMembersError;
 
   const memberUserIds = Array.from(new Set((allMembers ?? []).map((member) => member.user_id)));
-  let profileById = new Map<string, { username: string; display_name: string | null; avatar_url: string | null }>();
+  let profileById = new Map<
+    string,
+    { username: string; display_name: string | null; avatar_url: string | null }
+  >();
 
   if (memberUserIds.length > 0) {
     const { data: profiles, error: profileError } = await supabase
@@ -172,12 +205,44 @@ export async function listConversations(userId: string): Promise<ConversationSum
     );
   }
 
-  const { data: lastMessages, error: lastMessagesError } = await supabase
+  let lastMessages: Array<{
+    conversation_id: string;
+    ciphertext: string;
+    nonce: string;
+    recipient_keys: unknown;
+    sender_id: string;
+    type: string;
+    created_at: string;
+    is_void_mode?: boolean | null;
+    void_expires_at?: string | null;
+    void_duration_seconds?: number | null;
+  }> = [];
+
+  const lastMessagesWithVoid = await supabase
     .from("messages")
-    .select("conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, created_at")
+    .select(
+      "conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, is_void_mode, void_expires_at, void_duration_seconds, created_at",
+    )
     .in("conversation_id", conversationIds)
+    .or("expires_at.is.null,expires_at.gt.now()")
     .order("created_at", { ascending: false });
-  if (lastMessagesError) throw lastMessagesError;
+
+  if (lastMessagesWithVoid.error) {
+    if (!isMissingVoidColumnsError(lastMessagesWithVoid.error)) {
+      throw lastMessagesWithVoid.error;
+    }
+
+    const lastMessagesLegacy = await supabase
+      .from("messages")
+      .select("conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, created_at")
+      .in("conversation_id", conversationIds)
+      .or("expires_at.is.null,expires_at.gt.now()")
+      .order("created_at", { ascending: false });
+    if (lastMessagesLegacy.error) throw lastMessagesLegacy.error;
+    lastMessages = (lastMessagesLegacy.data ?? []) as typeof lastMessages;
+  } else {
+    lastMessages = (lastMessagesWithVoid.data ?? []) as typeof lastMessages;
+  }
 
   const lastMessageByConversation = new Map<string, ConversationSummary["last_message"]>();
   for (const message of lastMessages ?? []) {
@@ -188,6 +253,9 @@ export async function listConversations(userId: string): Promise<ConversationSum
         recipient_keys: message.recipient_keys as Record<string, string>,
         sender_id: message.sender_id,
         type: message.type,
+        is_void_mode: message.is_void_mode ?? false,
+        void_expires_at: message.void_expires_at ?? null,
+        void_duration_seconds: message.void_duration_seconds ?? null,
         created_at: message.created_at,
       });
     }
@@ -251,7 +319,9 @@ export async function findOrCreateDM(myId: string, otherId: string): Promise<str
 export async function createGroup(myId: string, name: string, memberIds: string[]) {
   if (!myId) throw new Error("Missing user id");
 
-  const uniqueMemberIds = Array.from(new Set(memberIds.filter(Boolean))).filter((id) => id !== myId);
+  const uniqueMemberIds = Array.from(new Set(memberIds.filter(Boolean))).filter(
+    (id) => id !== myId,
+  );
   const conversationId = crypto.randomUUID();
 
   const { error: conversationError } = await supabase
@@ -281,6 +351,7 @@ interface SendOptions {
   blob?: Blob;
   replyTo?: string | null;
   expiresInSec?: number | null;
+  voidModeDurationSec?: number | null;
 }
 
 export async function sendMessage(opts: SendOptions) {
@@ -297,34 +368,69 @@ export async function sendMessage(opts: SendOptions) {
     if (!opts.blob || opts.blob.size === 0) throw new Error("Media file is missing");
     const ext = opts.type === "image" ? "jpg" : "webm";
     const filename = `${opts.senderId}/${crypto.randomUUID()}.${ext}`;
-    const { error: uploadError } = await supabase.storage.from("chat-media").upload(filename, opts.blob, {
-      contentType: opts.blob.type || (opts.type === "image" ? "image/jpeg" : "audio/webm"),
-    });
+    const { error: uploadError } = await supabase.storage
+      .from("chat-media")
+      .upload(filename, opts.blob, {
+        contentType: opts.blob.type || (opts.type === "image" ? "image/jpeg" : "audio/webm"),
+      });
     if (uploadError) throw uploadError;
     mediaPath = filename;
     storedText = "";
   }
 
-  const expiresAt = opts.expiresInSec
-    ? new Date(Date.now() + opts.expiresInSec * 1000).toISOString()
-    : null;
+  const voidDurationSeconds = opts.voidModeDurationSec ?? null;
+  const voidExpiresAt = voidDurationSeconds ? computeExpiryIso(voidDurationSeconds) : null;
+  const disappearingExpiresAt = opts.expiresInSec ? computeExpiryIso(opts.expiresInSec) : null;
+  const expiresAt = voidExpiresAt ?? disappearingExpiresAt;
 
-  const { data: insertedMessage, error: messageError } = await supabase
-    .from("messages")
-    .insert({
-      conversation_id: opts.conversationId,
-      sender_id: opts.senderId,
-      type: opts.type,
-      ciphertext: storedText,
-      nonce: "",
-      recipient_keys: {},
-      media_path: mediaPath,
-      reply_to: opts.replyTo ?? null,
-      expires_at: expiresAt,
-    })
-    .select("id")
-    .single();
-  if (messageError) throw messageError;
+  const basePayload = {
+    conversation_id: opts.conversationId,
+    sender_id: opts.senderId,
+    type: opts.type,
+    ciphertext: storedText,
+    nonce: "",
+    recipient_keys: {},
+    media_path: mediaPath,
+    reply_to: opts.replyTo ?? null,
+    expires_at: expiresAt,
+  };
+
+  let insertedMessage: { id: string } | null = null;
+
+  if (voidDurationSeconds) {
+    const withVoidColumns = await supabase
+      .from("messages")
+      .insert({
+        ...basePayload,
+        is_void_mode: true,
+        void_expires_at: voidExpiresAt,
+        void_duration_seconds: voidDurationSeconds,
+      })
+      .select("id")
+      .single();
+
+    if (withVoidColumns.error) {
+      if (!isMissingVoidColumnsError(withVoidColumns.error)) {
+        throw withVoidColumns.error;
+      }
+
+      // Backward-compatible fallback until migration is applied.
+      // We still preserve expiry via `expires_at`.
+      const legacyInsert = await supabase
+        .from("messages")
+        .insert(basePayload)
+        .select("id")
+        .single();
+      if (legacyInsert.error) throw legacyInsert.error;
+      insertedMessage = legacyInsert.data;
+    } else {
+      insertedMessage = withVoidColumns.data;
+    }
+  } else {
+    const regularInsert = await supabase.from("messages").insert(basePayload).select("id").single();
+    if (regularInsert.error) throw regularInsert.error;
+    insertedMessage = regularInsert.data;
+  }
 
   const { error: conversationError } = await supabase
     .from("conversations")

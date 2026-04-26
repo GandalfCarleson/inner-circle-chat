@@ -391,11 +391,7 @@
 
   .interactive-surface:hover {
     background:
-      linear-gradient(
-        180deg,
-        rgb(var(--tone-accent, 143 120 183) / 0.16),
-        transparent 70%
-      ),
+      linear-gradient(180deg, rgb(var(--tone-accent, 143 120 183) / 0.16), transparent 70%),
       rgb(var(--tone-surface-b, 19 29 47) / 0.82);
     border-color: rgb(var(--tone-accent, 143 120 183) / 0.26);
     box-shadow: 0 10px 24px rgb(0 0 0 / 0.24);
@@ -632,8 +628,16 @@
     padding: 1rem 0.55rem 0.65rem;
     background:
       radial-gradient(circle at 50% 4%, rgb(var(--tone-warm, 206 154 95) / 0.11), transparent 36%),
-      radial-gradient(circle at 50% 100%, rgb(var(--tone-accent, 143 120 183) / 0.14), transparent 46%),
-      linear-gradient(180deg, rgb(var(--tone-surface-a, 47 43 62) / 0.33), rgb(var(--tone-surface-b, 23 21 35) / 0.44));
+      radial-gradient(
+        circle at 50% 100%,
+        rgb(var(--tone-accent, 143 120 183) / 0.14),
+        transparent 46%
+      ),
+      linear-gradient(
+        180deg,
+        rgb(var(--tone-surface-a, 47 43 62) / 0.33),
+        rgb(var(--tone-surface-b, 23 21 35) / 0.44)
+      );
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.05),
       0 16px 36px rgb(0 0 0 / 0.24);
@@ -651,8 +655,11 @@
     position: absolute;
     inset: -35% -15% auto;
     height: 12rem;
-    background:
-      radial-gradient(circle at 50% 50%, rgb(var(--tone-warm, 206 154 95) / 0.28), transparent 62%);
+    background: radial-gradient(
+      circle at 50% 50%,
+      rgb(var(--tone-warm, 206 154 95) / 0.28),
+      transparent 62%
+    );
     pointer-events: none;
   }
 
@@ -914,8 +921,7 @@
     border-radius: 999px;
     border: 1px solid rgb(255 255 255 / 0.16);
     background:
-      linear-gradient(145deg, rgb(131 104 214 / 0.56), rgb(94 145 215 / 0.42)),
-      rgb(16 22 36 / 0.78);
+      linear-gradient(145deg, rgb(131 104 214 / 0.56), rgb(94 145 215 / 0.42)), rgb(16 22 36 / 0.78);
     padding: 0.35rem 0.6rem;
     font-size: 0.7rem;
     color: rgb(243 248 255 / 0.94);
@@ -948,8 +954,7 @@
     border-radius: 0.95rem;
     border: 1px solid rgb(220 233 255 / 0.14);
     background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.04), transparent 65%),
-      rgb(8 12 22 / 0.82);
+      linear-gradient(180deg, rgb(255 255 255 / 0.04), transparent 65%), rgb(8 12 22 / 0.82);
     padding: 0.55rem 0.6rem;
     box-shadow:
       inset 0 1px 0 rgb(255 255 255 / 0.08),
@@ -1012,9 +1017,21 @@
   .message-bubble-theirs {
     border: 1px solid rgb(var(--tone-border, 220 233 255) / 0.1);
     background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.038), transparent 56%),
-      rgb(12 20 33 / 0.8);
+      linear-gradient(180deg, rgb(255 255 255 / 0.038), transparent 56%), rgb(12 20 33 / 0.8);
     color: var(--color-bubble-theirs-foreground);
+  }
+
+  .message-bubble-mine-void {
+    border-color: rgb(172 137 250 / 0.34);
+    background:
+      linear-gradient(140deg, rgb(103 181 226 / 0.12), transparent 66%),
+      linear-gradient(180deg, rgb(133 102 206 / 0.34), rgb(18 25 43 / 0.88));
+  }
+
+  .message-bubble-theirs-void {
+    border-color: rgb(185 162 248 / 0.2);
+    background:
+      linear-gradient(180deg, rgb(143 117 224 / 0.08), transparent 62%), rgb(9 14 24 / 0.84);
   }
 
   .message-bubble-shell {
@@ -1030,11 +1047,15 @@
     transform: scale(0.99);
   }
 
+  .message-expiring-out {
+    pointer-events: none;
+    animation: message-expire-out 320ms ease-out forwards;
+  }
+
   .composer-input-shell {
     border: 1px solid rgb(var(--tone-border, 220 233 255) / 0.12);
     background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.03), transparent 70%),
-      rgb(5 9 17 / 0.34);
+      linear-gradient(180deg, rgb(255 255 255 / 0.03), transparent 70%), rgb(5 9 17 / 0.34);
   }
 
   .min-h-app {
@@ -1118,12 +1139,28 @@
       radial-gradient(circle at 30% 78%, rgb(72 131 168 / 0.06), transparent 44%);
   }
 
+  .chat-void-mode {
+    --tone-accent: 136 108 206;
+    --tone-accent-secondary: 82 136 171;
+    --tone-warm: 172 125 91;
+  }
+
+  .chat-void-mode .chat-header-bar {
+    background:
+      linear-gradient(180deg, rgb(255 255 255 / 0.025), transparent 60%), rgb(5 8 14 / 0.84);
+  }
+
+  .chat-void-mode .chat-composer-premium::before {
+    background:
+      linear-gradient(180deg, transparent, rgb(2 5 11 / 0.64)),
+      radial-gradient(circle at 50% 100%, rgb(112 89 189 / 0.24), transparent 72%);
+  }
+
   .chat-header-bar {
     padding-top: max(0.4rem, env(safe-area-inset-top));
     backdrop-filter: blur(18px);
     background:
-      linear-gradient(180deg, rgb(255 255 255 / 0.03), transparent 60%),
-      rgb(8 13 23 / 0.7);
+      linear-gradient(180deg, rgb(255 255 255 / 0.03), transparent 60%), rgb(8 13 23 / 0.7);
   }
 
   .chat-header-anchored {
@@ -1152,8 +1189,7 @@
 
   .chat-composer-dock {
     backdrop-filter: blur(18px);
-    background:
-      linear-gradient(180deg, transparent, rgb(4 8 15 / 0.3));
+    background: linear-gradient(180deg, transparent, rgb(4 8 15 / 0.3));
   }
 
   .chat-composer-premium {
@@ -1203,6 +1239,14 @@
       inset 0 1px 0 rgb(255 255 255 / 0.18),
       0 18px 36px rgb(42 24 78 / 0.5),
       0 0 22px rgb(110 85 179 / 0.36);
+  }
+
+  .chat-void-mode-pill {
+    border-color: rgb(170 137 248 / 0.3);
+    background:
+      linear-gradient(180deg, rgb(156 125 236 / 0.2), transparent 75%), rgb(12 18 30 / 0.58);
+    color: rgb(228 214 255 / 0.9);
+    box-shadow: 0 0 14px rgb(134 98 215 / 0.24);
   }
 
   .chat-constellation-shell {
@@ -1333,13 +1377,21 @@
   }
 
   .social-constellation-inbox .social-constellation-vignette {
-    background:
-      radial-gradient(circle at 50% 32%, transparent 20%, rgb(7 11 18 / 0.2) 58%, rgb(6 9 15 / 0.32));
+    background: radial-gradient(
+      circle at 50% 32%,
+      transparent 20%,
+      rgb(7 11 18 / 0.2) 58%,
+      rgb(6 9 15 / 0.32)
+    );
   }
 
   .social-constellation-chat .social-constellation-vignette {
-    background:
-      radial-gradient(circle at 50% 48%, transparent 22%, rgb(5 8 14 / 0.22) 56%, rgb(4 7 12 / 0.36));
+    background: radial-gradient(
+      circle at 50% 48%,
+      transparent 22%,
+      rgb(5 8 14 / 0.22) 56%,
+      rgb(4 7 12 / 0.36)
+    );
   }
 
   .inbox-social-constellation {
@@ -1361,6 +1413,17 @@
       radial-gradient(circle at 18% 34%, rgb(96 74 166 / 0.13), transparent 42%),
       radial-gradient(circle at 80% 66%, rgb(80 141 186 / 0.1), transparent 40%),
       linear-gradient(180deg, rgb(4 6 12 / 0.22), rgb(3 6 12 / 0.44));
+  }
+
+  .chat-constellation-void .social-constellation-edge {
+    stroke-opacity: 0.64;
+  }
+
+  .chat-constellation-void .chat-constellation-fog {
+    background:
+      radial-gradient(circle at 20% 32%, rgb(108 82 184 / 0.19), transparent 44%),
+      radial-gradient(circle at 80% 70%, rgb(92 160 205 / 0.16), transparent 42%),
+      linear-gradient(180deg, rgb(3 5 11 / 0.28), rgb(2 4 9 / 0.52));
   }
 
   .chat-constellation-beam {
@@ -1550,8 +1613,12 @@
   .constellation-vignette {
     position: absolute;
     inset: 0;
-    background:
-      radial-gradient(circle at 50% 50%, transparent 20%, rgb(7 10 17 / 0.24) 62%, rgb(5 7 13 / 0.42));
+    background: radial-gradient(
+      circle at 50% 50%,
+      transparent 20%,
+      rgb(7 10 17 / 0.24) 62%,
+      rgb(5 7 13 / 0.42)
+    );
   }
 
   .constellation-mode-inbox .constellation-lines {
@@ -1559,8 +1626,12 @@
   }
 
   .constellation-mode-inbox .constellation-vignette {
-    background:
-      radial-gradient(circle at 50% 36%, transparent 22%, rgb(7 10 17 / 0.16) 60%, rgb(6 9 15 / 0.28));
+    background: radial-gradient(
+      circle at 50% 36%,
+      transparent 22%,
+      rgb(7 10 17 / 0.16) 60%,
+      rgb(6 9 15 / 0.28)
+    );
   }
 
   .constellation-mode-chat .constellation-lines {
@@ -1568,8 +1639,12 @@
   }
 
   .constellation-mode-chat .constellation-vignette {
-    background:
-      radial-gradient(circle at 48% 44%, rgb(6 9 16 / 0.06), rgb(6 9 16 / 0.28) 56%, rgb(4 7 13 / 0.42));
+    background: radial-gradient(
+      circle at 48% 44%,
+      rgb(6 9 16 / 0.06),
+      rgb(6 9 16 / 0.28) 56%,
+      rgb(4 7 13 / 0.42)
+    );
   }
 
   .constellation-mode-chat[data-signal="typing"] .constellation-edge,
@@ -1583,8 +1658,12 @@
   }
 
   .constellation-mode-profile .constellation-vignette {
-    background:
-      radial-gradient(circle at 50% 24%, transparent 18%, rgb(9 10 16 / 0.2) 58%, rgb(8 9 14 / 0.35));
+    background: radial-gradient(
+      circle at 50% 24%,
+      transparent 18%,
+      rgb(9 10 16 / 0.2) 58%,
+      rgb(8 9 14 / 0.35)
+    );
   }
 
   .constellation-mode-friends .constellation-lines {
@@ -1592,8 +1671,12 @@
   }
 
   .constellation-mode-friends .constellation-vignette {
-    background:
-      radial-gradient(circle at 50% 48%, transparent 14%, rgb(8 11 19 / 0.16) 62%, rgb(6 9 14 / 0.3));
+    background: radial-gradient(
+      circle at 50% 48%,
+      transparent 14%,
+      rgb(8 11 19 / 0.16) 62%,
+      rgb(6 9 14 / 0.3)
+    );
   }
 
   .void-splash {
@@ -1616,7 +1699,12 @@
     background:
       radial-gradient(circle at 50% 106%, rgb(var(--void-splash-violet) / 0.31), transparent 20rem),
       radial-gradient(circle at 50% 72%, rgb(var(--void-splash-blue) / 0.075), transparent 17rem),
-      linear-gradient(180deg, var(--void-splash-base-0), var(--void-splash-base-1) 54%, var(--void-splash-base-2));
+      linear-gradient(
+        180deg,
+        var(--void-splash-base-0),
+        var(--void-splash-base-1) 54%,
+        var(--void-splash-base-2)
+      );
   }
 
   .void-splash-stars {
@@ -1709,7 +1797,11 @@
     position: absolute;
     inset: -11px;
     border-radius: 999px;
-    background: radial-gradient(circle at center, rgb(var(--void-splash-violet) / 0.24), transparent 72%);
+    background: radial-gradient(
+      circle at center,
+      rgb(var(--void-splash-violet) / 0.24),
+      transparent 72%
+    );
     filter: blur(8px);
   }
 
@@ -1751,6 +1843,19 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes message-expire-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+    filter: blur(2px);
   }
 }
 
@@ -2052,6 +2157,7 @@
   .friends-network-user-node,
   .friends-network-user-node .avatar-fallback,
   .friends-network-user-node img,
+  .message-expiring-out,
   .void-node-pulse-main,
   .void-node-pulse-a,
   .void-node-pulse-b,

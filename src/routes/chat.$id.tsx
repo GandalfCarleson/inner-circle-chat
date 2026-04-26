@@ -11,6 +11,7 @@ import {
   Reply,
   Send,
   Smile,
+  Sparkles,
   Timer,
   Trash2,
   Video,
@@ -19,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { ChatSidebar } from "@/components/ChatSidebar";
+import { VoidModeSheet } from "@/components/chat/VoidModeSheet";
 import { ChatConstellationLayer } from "@/components/constellation/ChatConstellationLayer";
 import { useCallManager } from "@/contexts/CallContext";
 import { usePresence } from "@/contexts/PresenceContext";
@@ -32,6 +34,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { CALLING_ENABLED } from "@/lib/calls";
 import { downloadMedia, getMessageBody, markConversationRead, sendMessage } from "@/lib/messaging";
 import { countMessagesByConversationIds } from "@/lib/socialGraphData";
+import { formatVoidModeDuration, isExpired } from "@/lib/voidMode";
 
 export const Route = createFileRoute("/chat/$id")({
   head: () => ({
@@ -58,6 +61,9 @@ interface MessageRow {
   media_path: string | null;
   reply_to: string | null;
   expires_at: string | null;
+  is_void_mode: boolean;
+  void_expires_at: string | null;
+  void_duration_seconds: number | null;
   created_at: string;
 }
 
@@ -93,6 +99,20 @@ function scrollToLatest(container: HTMLDivElement | null, behavior: ScrollBehavi
 function formatLastSeen(dateString: string) {
   const distance = formatDistanceToNowStrict(new Date(dateString));
   return `Last seen ${distance} ago`;
+}
+
+function getMessageExpiry(
+  message: Pick<MessageRow, "is_void_mode" | "void_expires_at" | "expires_at">,
+) {
+  return message.is_void_mode
+    ? (message.void_expires_at ?? message.expires_at)
+    : message.expires_at;
+}
+
+function isMessageExpired(
+  message: Pick<MessageRow, "is_void_mode" | "void_expires_at" | "expires_at">,
+) {
+  return isExpired(getMessageExpiry(message));
 }
 
 async function fetchConversationMembers(conversationId: string): Promise<MemberInfo[]> {
@@ -156,6 +176,7 @@ async function fetchConversationMessages(conversationId: string): Promise<Messag
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
+    .or("expires_at.is.null,expires_at.gt.now()")
     .order("created_at", { ascending: true })
     .limit(200);
 
@@ -205,9 +226,7 @@ async function countMessagesBySender(
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(6, uniqueSenderIds.length) }, worker),
-  );
+  await Promise.all(Array.from({ length: Math.min(6, uniqueSenderIds.length) }, worker));
   return counts;
 }
 
@@ -232,14 +251,18 @@ function ChatPage() {
   const [recording, setRecording] = useState(false);
   const [showEmojiFor, setShowEmojiFor] = useState<string | null>(null);
   const [disappearing, setDisappearing] = useState<number | null>(null);
+  const [voidModeDurationSeconds, setVoidModeDurationSeconds] = useState<number | null>(null);
+  const [voidModeSheetOpen, setVoidModeSheetOpen] = useState(false);
+  const [voidModeDraftDurationSeconds, setVoidModeDraftDurationSeconds] = useState(60);
   const [lastReadAt, setLastReadAt] = useState<string | null>(null);
   const [composerHeight, setComposerHeight] = useState(120);
   const [typingByUserId, setTypingByUserId] = useState<Record<string, number>>({});
   const [newlyAnimatedMessageIds, setNewlyAnimatedMessageIds] = useState<Record<string, true>>({});
+  const [expiringMessageIds, setExpiringMessageIds] = useState<Record<string, true>>({});
   const [conversationMessageCount, setConversationMessageCount] = useState<number | null>(null);
-  const [memberMessageCountByUserId, setMemberMessageCountByUserId] = useState<Record<string, number>>(
-    {},
-  );
+  const [memberMessageCountByUserId, setMemberMessageCountByUserId] = useState<
+    Record<string, number>
+  >({});
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<BlobPart[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -248,6 +271,7 @@ function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const viewportTouchStartYRef = useRef<number | null>(null);
   const messageIdsRef = useRef<string[]>([]);
+  const messagesRef = useRef<MessageRow[]>([]);
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const typingStateRef = useRef<"typing" | "idle">("idle");
   const typingStopTimeoutRef = useRef<number | null>(null);
@@ -273,6 +297,8 @@ function ChatPage() {
         : "Direct conversation";
   const isDirectMessage = convMeta?.type === "dm" && otherMembers.length === 1;
   const showCallActions = CALLING_ENABLED && isDirectMessage;
+  const showVoidModeAction = isDirectMessage;
+  const voidModeActive = showVoidModeAction && voidModeDurationSeconds !== null;
   const directMessageTarget = otherMembers[0] ?? null;
   const activeTypingUserId = useMemo(() => {
     const now = Date.now();
@@ -286,7 +312,7 @@ function ChatPage() {
     ? members.find((member) => member.user_id === activeTypingUserId)?.display_name ||
       members.find((member) => member.user_id === activeTypingUserId)?.username ||
       "Someone"
-      : null;
+    : null;
   const {
     signal: constellationSignal,
     emitIncomingPulse,
@@ -296,7 +322,11 @@ function ChatPage() {
     typingPeerActive: Boolean(activeTypingUserId),
   });
   const otherMemberIdsSignature = useMemo(
-    () => otherMembers.map((member) => member.user_id).sort().join(","),
+    () =>
+      otherMembers
+        .map((member) => member.user_id)
+        .sort()
+        .join(","),
     [otherMembers],
   );
   const lastMessageAtBySender = useMemo(() => {
@@ -322,10 +352,7 @@ function ChatPage() {
           name: directMessageTarget.display_name || directMessageTarget.username || "Unknown",
           username: directMessageTarget.username || "unknown",
           avatarUrl: directMessageTarget.avatar_url,
-          totalMessages: Math.max(
-            0,
-            conversationMessageCount ?? messages.length,
-          ),
+          totalMessages: Math.max(0, conversationMessageCount ?? messages.length),
           lastMessageAt: conversationLastMessageAt,
           isOnline: isUserOnline(directMessageTarget.user_id),
           isTyping: activeTypingUserId === directMessageTarget.user_id,
@@ -340,7 +367,9 @@ function ChatPage() {
       avatarUrl: member.avatar_url,
       totalMessages: Math.max(
         0,
-        memberMessageCountByUserId[member.user_id] ?? localMessageCountBySender[member.user_id] ?? 0,
+        memberMessageCountByUserId[member.user_id] ??
+          localMessageCountBySender[member.user_id] ??
+          0,
       ),
       lastMessageAt: lastMessageAtBySender[member.user_id] ?? conversationLastMessageAt,
       isOnline: isUserOnline(member.user_id),
@@ -364,8 +393,9 @@ function ChatPage() {
     const typingBoost = activeTypingUserId ? 0.5 : 0;
     const animatedBoost = Math.min(0.45, animatedCount * 0.14);
     const composingBoost = text.trim().length > 0 ? 0.08 : 0;
-    return Math.min(1, 0.16 + typingBoost + animatedBoost + composingBoost);
-  }, [activeTypingUserId, newlyAnimatedMessageIds, text]);
+    const voidModeBoost = voidModeActive ? 0.14 : 0;
+    return Math.min(1, 0.16 + typingBoost + animatedBoost + composingBoost + voidModeBoost);
+  }, [activeTypingUserId, newlyAnimatedMessageIds, text, voidModeActive]);
   const chatGradient = useGradient("chat", { activity: chatActivityLevel });
   const headerSubtitle = useMemo(() => {
     if (typingDisplayName) return `${typingDisplayName} is typing...`;
@@ -386,6 +416,19 @@ function ChatPage() {
     subtitle,
     typingDisplayName,
   ]);
+
+  useEffect(() => {
+    setVoidModeDurationSeconds(null);
+    setVoidModeSheetOpen(false);
+    setVoidModeDraftDurationSeconds(60);
+    setExpiringMessageIds({});
+  }, [convId]);
+
+  useEffect(() => {
+    if (showVoidModeAction) return;
+    setVoidModeDurationSeconds(null);
+    setVoidModeSheetOpen(false);
+  }, [showVoidModeAction]);
 
   useEffect(() => {
     if (!user) return;
@@ -467,7 +510,9 @@ function ChatPage() {
 
     async function loadMessages() {
       try {
-        const nextMessages = await fetchConversationMessages(convId);
+        const nextMessages = (await fetchConversationMessages(convId)).filter(
+          (message) => !isMessageExpired(message),
+        );
         const nextReactions = await fetchReactionRows(nextMessages.map((message) => message.id));
 
         if (cancelled) return;
@@ -487,10 +532,11 @@ function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [convId, user]);
+  }, [convId, emitIncomingPulse, emitOutgoingPulse, user]);
 
   useEffect(() => {
     messageIdsRef.current = messages.map((message) => message.id);
+    messagesRef.current = messages;
   }, [messages]);
 
   useEffect(() => {
@@ -517,6 +563,9 @@ function ChatPage() {
         },
         (payload) => {
           const insertedMessage = payload.new as MessageRow;
+          if (isMessageExpired(insertedMessage)) {
+            return;
+          }
           const isMine = insertedMessage.sender_id === user.id;
           setMessages((current) => {
             if (current.some((message) => message.id === insertedMessage.id)) return current;
@@ -550,6 +599,12 @@ function ChatPage() {
         (payload) => {
           const deletedId = (payload.old as Pick<MessageRow, "id">).id;
           setMessages((current) => current.filter((message) => message.id !== deletedId));
+          setExpiringMessageIds((current) => {
+            if (!current[deletedId]) return current;
+            const next = { ...current };
+            delete next[deletedId];
+            return next;
+          });
           setMediaUrls((current) => {
             const next = { ...current };
             const staleUrl = next[deletedId];
@@ -569,7 +624,7 @@ function ChatPage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [convId, user]);
+  }, [convId, emitIncomingPulse, emitOutgoingPulse, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -646,15 +701,49 @@ function ChatPage() {
   }, []);
 
   useEffect(() => {
-    // Disappearing messages are enforced by expiry timestamps already stored in the database.
-    // This interval only keeps expired rows from lingering in the local view.
+    // Keep temporary messages out of the visible thread without abrupt removal.
+    // Messages are marked as expiring first, then removed after a short dissolve window.
     const timer = window.setInterval(() => {
-      setMessages((current) =>
-        current.filter(
-          (message) => !message.expires_at || new Date(message.expires_at).getTime() > Date.now(),
-        ),
-      );
-    }, 5000);
+      const expiredIds = messagesRef.current
+        .filter((message) => isMessageExpired(message))
+        .map((message) => message.id);
+      if (expiredIds.length === 0) return;
+
+      setExpiringMessageIds((current) => {
+        const next = { ...current };
+        let hasNew = false;
+
+        for (const messageId of expiredIds) {
+          if (next[messageId]) continue;
+          next[messageId] = true;
+          hasNew = true;
+        }
+        if (!hasNew) return current;
+
+        window.setTimeout(() => {
+          const expiredIdSet = new Set(expiredIds);
+          setMessages((rows) => rows.filter((message) => !expiredIdSet.has(message.id)));
+          setExpiringMessageIds((inner) => {
+            const innerNext = { ...inner };
+            for (const messageId of expiredIds) delete innerNext[messageId];
+            return innerNext;
+          });
+          setMediaUrls((urls) => {
+            const nextUrls = { ...urls };
+            for (const messageId of expiredIds) {
+              const staleUrl = nextUrls[messageId];
+              if (staleUrl) URL.revokeObjectURL(staleUrl);
+              delete nextUrls[messageId];
+            }
+            return nextUrls;
+          });
+          setShowEmojiFor((openId) => (openId && expiredIdSet.has(openId) ? null : openId));
+          setReplyTargetId((replyId) => (replyId && expiredIdSet.has(replyId) ? null : replyId));
+        }, 320);
+
+        return next;
+      });
+    }, 1000);
 
     return () => {
       window.clearInterval(timer);
@@ -950,6 +1039,7 @@ function ChatPage() {
         text: bodyText,
         replyTo: replyTarget?.id ?? null,
         expiresInSec: disappearing,
+        voidModeDurationSec: voidModeActive ? voidModeDurationSeconds : null,
       });
       setReplyTargetId(null);
       window.setTimeout(() => scrollToLatest(scrollRef.current, "smooth"), 20);
@@ -979,6 +1069,7 @@ function ChatPage() {
         blob: file,
         replyTo: replyTarget?.id ?? null,
         expiresInSec: disappearing,
+        voidModeDurationSec: voidModeActive ? voidModeDurationSeconds : null,
       });
       setReplyTargetId(null);
       stopTypingNow();
@@ -1013,6 +1104,7 @@ function ChatPage() {
             blob: audioBlob,
             replyTo: replyTarget?.id ?? null,
             expiresInSec: disappearing,
+            voidModeDurationSec: voidModeActive ? voidModeDurationSeconds : null,
           });
           setReplyTargetId(null);
           stopTypingNow();
@@ -1096,6 +1188,23 @@ function ChatPage() {
     }
   }
 
+  function openVoidModeSheet() {
+    setVoidModeDraftDurationSeconds(voidModeDurationSeconds ?? 60);
+    setVoidModeSheetOpen(true);
+  }
+
+  function activateVoidMode() {
+    setVoidModeDurationSeconds(voidModeDraftDurationSeconds);
+    setVoidModeSheetOpen(false);
+    toast.success(`Void Mode on · ${formatVoidModeDuration(voidModeDraftDurationSeconds)}`);
+  }
+
+  function deactivateVoidMode() {
+    setVoidModeDurationSeconds(null);
+    setVoidModeSheetOpen(false);
+    toast.message("Void Mode off");
+  }
+
   async function handleStartCall(type: "audio" | "video") {
     if (!user) return;
     if (!CALLING_ENABLED) {
@@ -1130,11 +1239,15 @@ function ChatPage() {
         <ChatSidebar activeId={convId} />
       </div>
 
-      <main className="surface-secondary chat-main-shell chat-experience-shell mobile-edge-to-edge relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px]">
+      <main
+        className={`surface-secondary chat-main-shell chat-experience-shell mobile-edge-to-edge relative flex min-w-0 flex-1 flex-col overflow-hidden md:rounded-[34px] ${
+          voidModeActive ? "chat-void-mode" : ""
+        }`}
+      >
         <ChatConstellationLayer
           signal={constellationSignal}
           connections={chatSocialConnections}
-          className="opacity-[0.94]"
+          className={voidModeActive ? "chat-constellation-void opacity-[0.98]" : "opacity-[0.94]"}
         />
 
         <header className="chat-header-bar chat-header-anchored glass-dock sticky top-0 z-30 shrink-0 border-b subtle-divider px-3 py-3 md:px-6 md:py-5">
@@ -1158,13 +1271,21 @@ function ChatPage() {
               <p className="inline-flex max-w-full items-center gap-1.5 truncate text-xs uppercase tracking-[0.15em] text-white/38 md:text-[11px]">
                 <span
                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    isDirectMessage && directMessageTarget && isUserOnline(directMessageTarget.user_id)
+                    isDirectMessage &&
+                    directMessageTarget &&
+                    isUserOnline(directMessageTarget.user_id)
                       ? "bg-emerald-400"
                       : "bg-white/30"
                   }`}
                 />
                 {headerSubtitle}
               </p>
+              {voidModeActive && voidModeDurationSeconds && (
+                <p className="chat-void-mode-pill mt-1 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em]">
+                  <Sparkles className="h-3 w-3" />
+                  Void Mode · {formatVoidModeDuration(voidModeDurationSeconds)}
+                </p>
+              )}
             </div>
 
             {showCallActions && (
@@ -1202,6 +1323,20 @@ function ChatPage() {
             >
               <Timer className="h-3.5 w-3.5" />
             </button>
+
+            {showVoidModeAction && (
+              <button
+                onClick={openVoidModeSheet}
+                className={`interactive-surface quiet-hover inline-flex h-10 w-10 items-center justify-center rounded-2xl border text-muted-foreground md:h-11 md:w-11 ${
+                  voidModeActive
+                    ? "border-white/20 bg-white/[0.09] text-foreground"
+                    : "border-white/10 hover:text-foreground"
+                }`}
+                title="Void Mode"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+              </button>
+            )}
 
             <button className="interactive-surface premium-elevated hidden h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:inline-flex">
               <MoreHorizontal className="h-4 w-4" />
@@ -1268,13 +1403,17 @@ function ChatPage() {
                 : null;
               const reactionSummary = groupedReactions(message.id);
               const replySender = replyMessage ? senderOf(replyMessage.sender_id) : null;
+              const voidMessage = Boolean(message.is_void_mode);
+              const isExpiringOut = Boolean(expiringMessageIds[message.id]);
 
               return (
                 <div
                   key={message.id}
                   className={`group flex flex-col ${mine ? "items-end" : "items-start"} ${
                     startsGroup ? "pt-2" : ""
-                  } ${newlyAnimatedMessageIds[message.id] ? "message-enter" : ""}`}
+                  } ${newlyAnimatedMessageIds[message.id] ? "message-enter" : ""} ${
+                    isExpiringOut ? "message-expiring-out" : ""
+                  }`}
                 >
                   {showSender && (
                     <div className="mb-2 flex items-center gap-2 px-1">
@@ -1311,9 +1450,13 @@ function ChatPage() {
 
                       <div
                         className={`message-bubble-shell relative overflow-hidden rounded-[24px] px-3.5 py-3 md:rounded-[26px] md:px-4 ${
-                          mine
-                            ? "message-bubble-mine"
-                            : "message-bubble-theirs"
+                          mine ? "message-bubble-mine" : "message-bubble-theirs"
+                        } ${
+                          voidMessage
+                            ? mine
+                              ? "message-bubble-mine-void"
+                              : "message-bubble-theirs-void"
+                            : ""
                         } ${startsGroup ? "" : mine ? "rounded-tr-[18px]" : "rounded-tl-[18px]"} ${
                           endsGroup ? "" : mine ? "rounded-br-[18px]" : "rounded-bl-[18px]"
                         }`}
@@ -1416,7 +1559,7 @@ function ChatPage() {
                     }`}
                   >
                     {format(new Date(message.created_at), "HH:mm")}
-                    {message.expires_at && " · vanishes"}
+                    {voidMessage ? " · void" : message.expires_at ? " · vanishes" : ""}
                   </span>
                 </div>
               );
@@ -1556,6 +1699,19 @@ function ChatPage() {
           </div>
         </div>
       </main>
+
+      {showVoidModeAction && (
+        <VoidModeSheet
+          open={voidModeSheetOpen}
+          onOpenChange={setVoidModeSheetOpen}
+          isActive={voidModeActive}
+          currentDurationSeconds={voidModeDurationSeconds}
+          selectedDurationSeconds={voidModeDraftDurationSeconds}
+          onSelectedDurationChange={setVoidModeDraftDurationSeconds}
+          onActivate={activateVoidMode}
+          onDeactivate={deactivateVoidMode}
+        />
+      )}
     </div>
   );
 }

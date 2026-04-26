@@ -148,12 +148,15 @@ export type Database = {
           edited_at: string | null
           expires_at: string | null
           id: string
+          is_void_mode: boolean
           media_path: string | null
           nonce: string
           recipient_keys: Json
           reply_to: string | null
           sender_id: string
           type: Database["public"]["Enums"]["message_type"]
+          void_duration_seconds: number | null
+          void_expires_at: string | null
         }
         Insert: {
           ciphertext: string
@@ -162,12 +165,15 @@ export type Database = {
           edited_at?: string | null
           expires_at?: string | null
           id?: string
+          is_void_mode?: boolean
           media_path?: string | null
           nonce: string
           recipient_keys?: Json
           reply_to?: string | null
           sender_id: string
           type?: Database["public"]["Enums"]["message_type"]
+          void_duration_seconds?: number | null
+          void_expires_at?: string | null
         }
         Update: {
           ciphertext?: string
@@ -176,12 +182,15 @@ export type Database = {
           edited_at?: string | null
           expires_at?: string | null
           id?: string
+          is_void_mode?: boolean
           media_path?: string | null
           nonce?: string
           recipient_keys?: Json
           reply_to?: string | null
           sender_id?: string
           type?: Database["public"]["Enums"]["message_type"]
+          void_duration_seconds?: number | null
+          void_expires_at?: string | null
         }
         Relationships: [
           {
