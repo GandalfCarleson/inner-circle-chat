@@ -26,7 +26,8 @@ export function useKeyboardVisibility() {
     baselineHeightRef.current = readHeight();
     handleViewportChange();
 
-    if (Capacitor.isNativePlatform()) {
+    const useNativeKeyboardEvents = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+    if (useNativeKeyboardEvents) {
       void Keyboard.addListener("keyboardWillShow", () => {
         setKeyboardVisible(true);
       }).then((handle) => listenerHandles.push(handle));

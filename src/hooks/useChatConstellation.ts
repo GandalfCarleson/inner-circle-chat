@@ -59,13 +59,17 @@ export function useChatConstellation({ conversationId, typingPeerActive }: Param
     };
   }, []);
 
+  const emitOutgoingPulse = useCallback(() => emitSignal("outgoing", OUTGOING_PATH), [emitSignal]);
+  const emitIncomingPulse = useCallback(() => emitSignal("incoming", INCOMING_PATH), [emitSignal]);
+  const emitFocusPulse = useCallback(() => emitSignal("focus", FOCUS_PATH), [emitSignal]);
+  const emitTypingPulse = useCallback(() => emitSignal("typing", TYPING_PATH), [emitSignal]);
+
   return {
     signal,
     highlightNodeIds,
-    emitOutgoingPulse: () => emitSignal("outgoing", OUTGOING_PATH),
-    emitIncomingPulse: () => emitSignal("incoming", INCOMING_PATH),
-    emitFocusPulse: () => emitSignal("focus", FOCUS_PATH),
-    emitTypingPulse: () => emitSignal("typing", TYPING_PATH),
+    emitOutgoingPulse,
+    emitIncomingPulse,
+    emitFocusPulse,
+    emitTypingPulse,
   };
 }
-

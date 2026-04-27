@@ -1,5 +1,5 @@
 import { Link, useRouter } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePresence } from "@/contexts/PresenceContext";
 import {
@@ -84,10 +84,15 @@ export function ChatSidebar({ activeId }: Props) {
     kind: "focus",
     key: 0,
   });
+  const conversationIdsRef = useRef<Set<string>>(new Set());
 
   function emitConstellationSignal(kind: ConstellationSignal["kind"]) {
     setConstellationSignal((current) => ({ kind, key: current.key + 1 }));
   }
+
+  useEffect(() => {
+    conversationIdsRef.current = new Set(conversations.map((conversation) => conversation.id));
+  }, [conversations]);
 
   useEffect(() => {
     if (!user) return;
@@ -124,8 +129,66 @@ export function ChatSidebar({ activeId }: Props) {
     // Sidebar only needs lightweight refresh triggers, not full message polling.
     const channel = supabase
       .channel("sidebar-messages")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, () => {
-        void loadSidebarState();
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
+        const inserted = payload.new as {
+          conversation_id?: string;
+          sender_id?: string;
+          created_at?: string;
+          ciphertext?: string;
+          nonce?: string;
+          recipient_keys?: Record<string, string>;
+          type?: string;
+          is_void_mode?: boolean;
+          void_expires_at?: string | null;
+          void_duration_seconds?: number | null;
+        };
+        const conversationId = inserted.conversation_id;
+        if (!conversationId) return;
+
+        if (!conversationIdsRef.current.has(conversationId)) {
+          void loadSidebarState();
+          return;
+        }
+
+        setConversations((current) => {
+          let didUpdate = false;
+          const next = current.map((conversation) => {
+            if (conversation.id !== conversationId) return conversation;
+            didUpdate = true;
+            const createdAt = inserted.created_at ?? conversation.updated_at;
+            return {
+              ...conversation,
+              updated_at: createdAt,
+              last_message: {
+                ciphertext: inserted.ciphertext ?? "",
+                nonce: inserted.nonce ?? "",
+                recipient_keys: inserted.recipient_keys ?? {},
+                sender_id: inserted.sender_id ?? "",
+                type: inserted.type ?? "text",
+                is_void_mode: Boolean(inserted.is_void_mode),
+                void_expires_at: inserted.void_expires_at ?? null,
+                void_duration_seconds:
+                  typeof inserted.void_duration_seconds === "number"
+                    ? inserted.void_duration_seconds
+                    : null,
+                created_at: createdAt,
+              },
+            };
+          });
+
+          if (!didUpdate) return current;
+          return [...next].sort(
+            (left, right) =>
+              new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
+          );
+        });
+
+        if (inserted.sender_id && inserted.sender_id !== user.id && conversationId !== activeId) {
+          setUnreadCounts((current) => ({
+            ...current,
+            [conversationId]: (current[conversationId] ?? 0) + 1,
+          }));
+        }
       })
       .on(
         "postgres_changes",
@@ -145,7 +208,7 @@ export function ChatSidebar({ activeId }: Props) {
       cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [user]);
+  }, [activeId, user]);
 
   const filteredConversations = useMemo(() => {
     const term = query.trim().toLowerCase();

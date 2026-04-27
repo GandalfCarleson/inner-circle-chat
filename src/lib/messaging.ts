@@ -37,6 +37,12 @@ interface RawConversationMember {
   user_id: string;
 }
 
+interface MessageVisibilityShape {
+  is_void_mode?: boolean | null;
+  void_expires_at?: string | null;
+  expires_at?: string | null;
+}
+
 function isMissingVoidColumnsError(error: unknown) {
   if (!error || typeof error !== "object") return false;
 
@@ -49,6 +55,18 @@ function isMissingVoidColumnsError(error: unknown) {
     message.includes("void_expires_at") ||
     message.includes("void_duration_seconds")
   );
+}
+
+function resolveVoidExpiryAt(message: MessageVisibilityShape) {
+  if (!message.is_void_mode) return null;
+  // Legacy fallback for environments that still used `expires_at` for void messages.
+  return message.void_expires_at ?? message.expires_at ?? null;
+}
+
+function isVisibleMessage(message: MessageVisibilityShape, nowMs = Date.now()) {
+  const expiry = resolveVoidExpiryAt(message);
+  if (!expiry) return true;
+  return new Date(expiry).getTime() > nowMs;
 }
 
 export function getMessageBody(
@@ -82,15 +100,38 @@ export async function listUnreadCounts(userId: string): Promise<Record<string, n
     ]),
   );
 
-  const { data: messages, error: messageError } = await supabase
+  let messages: Array<{
+    conversation_id: string;
+    sender_id: string;
+    created_at: string;
+    is_void_mode?: boolean | null;
+    void_expires_at?: string | null;
+    expires_at?: string | null;
+  }> = [];
+
+  const unreadRowsWithVoid = await supabase
     .from("messages")
-    .select("conversation_id, sender_id, created_at")
+    .select("conversation_id, sender_id, created_at, is_void_mode, void_expires_at, expires_at")
     .in("conversation_id", conversationIds)
-    .or("expires_at.is.null,expires_at.gt.now()")
     .neq("sender_id", userId);
-  if (messageError) throw messageError;
+  if (unreadRowsWithVoid.error) {
+    if (!isMissingVoidColumnsError(unreadRowsWithVoid.error)) {
+      throw unreadRowsWithVoid.error;
+    }
+
+    const unreadRowsLegacy = await supabase
+      .from("messages")
+      .select("conversation_id, sender_id, created_at")
+      .in("conversation_id", conversationIds)
+      .neq("sender_id", userId);
+    if (unreadRowsLegacy.error) throw unreadRowsLegacy.error;
+    messages = (unreadRowsLegacy.data ?? []) as typeof messages;
+  } else {
+    messages = (unreadRowsWithVoid.data ?? []) as typeof messages;
+  }
 
   return (messages ?? []).reduce<Record<string, number>>((acc, message) => {
+    if (!isVisibleMessage(message)) return acc;
     const lastReadAt = lastReadAtByConversation.get(message.conversation_id);
     if (!lastReadAt || new Date(message.created_at).getTime() > new Date(lastReadAt).getTime()) {
       acc[message.conversation_id] = (acc[message.conversation_id] || 0) + 1;
@@ -221,10 +262,9 @@ export async function listConversations(userId: string): Promise<ConversationSum
   const lastMessagesWithVoid = await supabase
     .from("messages")
     .select(
-      "conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, is_void_mode, void_expires_at, void_duration_seconds, created_at",
+      "conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, is_void_mode, void_expires_at, void_duration_seconds, expires_at, created_at",
     )
     .in("conversation_id", conversationIds)
-    .or("expires_at.is.null,expires_at.gt.now()")
     .order("created_at", { ascending: false });
 
   if (lastMessagesWithVoid.error) {
@@ -234,9 +274,8 @@ export async function listConversations(userId: string): Promise<ConversationSum
 
     const lastMessagesLegacy = await supabase
       .from("messages")
-      .select("conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, created_at")
+      .select("conversation_id, ciphertext, nonce, recipient_keys, sender_id, type, expires_at, created_at")
       .in("conversation_id", conversationIds)
-      .or("expires_at.is.null,expires_at.gt.now()")
       .order("created_at", { ascending: false });
     if (lastMessagesLegacy.error) throw lastMessagesLegacy.error;
     lastMessages = (lastMessagesLegacy.data ?? []) as typeof lastMessages;
@@ -245,7 +284,8 @@ export async function listConversations(userId: string): Promise<ConversationSum
   }
 
   const lastMessageByConversation = new Map<string, ConversationSummary["last_message"]>();
-  for (const message of lastMessages ?? []) {
+  const visibleMessages = (lastMessages ?? []).filter((message) => isVisibleMessage(message));
+  for (const message of visibleMessages) {
     if (!lastMessageByConversation.has(message.conversation_id)) {
       lastMessageByConversation.set(message.conversation_id, {
         ciphertext: message.ciphertext,
@@ -279,41 +319,21 @@ export async function listConversations(userId: string): Promise<ConversationSum
 
 export async function findOrCreateDM(myId: string, otherId: string): Promise<string> {
   if (!myId || !otherId) throw new Error("Missing user id");
+  if (myId === otherId) throw new Error("Cannot create a DM with yourself.");
 
-  const { data: mine, error: mineError } = await supabase
-    .from("conversation_members")
-    .select("conversation_id, conversations!inner(type)")
-    .eq("user_id", myId);
-  if (mineError) throw mineError;
+  const untypedClient = supabase as unknown as {
+    rpc: (
+      functionName: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: string | null; error: { message: string } | null }>;
+  };
 
-  const dmIds = (mine ?? [])
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    .filter((row: any) => row.conversations.type === "dm")
-    .map((row) => row.conversation_id);
-
-  if (dmIds.length > 0) {
-    const { data: other, error: otherError } = await supabase
-      .from("conversation_members")
-      .select("conversation_id")
-      .eq("user_id", otherId)
-      .in("conversation_id", dmIds);
-    if (otherError) throw otherError;
-    if (other && other.length > 0) return other[0].conversation_id;
-  }
-
-  const conversationId = crypto.randomUUID();
-  const { error: conversationError } = await supabase
-    .from("conversations")
-    .insert({ id: conversationId, type: "dm", created_by: myId });
-  if (conversationError) throw conversationError;
-
-  const { error: memberError } = await supabase.from("conversation_members").insert([
-    { conversation_id: conversationId, user_id: myId, role: "member" },
-    { conversation_id: conversationId, user_id: otherId, role: "member" },
-  ]);
-  if (memberError) throw memberError;
-
-  return conversationId;
+  const { data, error } = await untypedClient.rpc("find_or_create_dm", {
+    other_user_id: otherId,
+  });
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Failed to create direct message.");
+  return data;
 }
 
 export async function createGroup(myId: string, name: string, memberIds: string[]) {
@@ -350,8 +370,15 @@ interface SendOptions {
   text?: string;
   blob?: Blob;
   replyTo?: string | null;
-  expiresInSec?: number | null;
   voidModeDurationSec?: number | null;
+}
+
+function getVoiceMediaExtension(contentType: string) {
+  const normalized = contentType.toLowerCase();
+  if (normalized.includes("audio/mp4") || normalized.includes("audio/aac")) return "m4a";
+  if (normalized.includes("audio/ogg")) return "ogg";
+  if (normalized.includes("audio/mpeg")) return "mp3";
+  return "webm";
 }
 
 export async function sendMessage(opts: SendOptions) {
@@ -366,7 +393,8 @@ export async function sendMessage(opts: SendOptions) {
     if (!storedText) throw new Error("Message cannot be empty");
   } else {
     if (!opts.blob || opts.blob.size === 0) throw new Error("Media file is missing");
-    const ext = opts.type === "image" ? "jpg" : "webm";
+    const ext =
+      opts.type === "image" ? "jpg" : getVoiceMediaExtension(opts.blob.type || "audio/webm");
     const filename = `${opts.senderId}/${crypto.randomUUID()}.${ext}`;
     const { error: uploadError } = await supabase.storage
       .from("chat-media")
@@ -378,10 +406,11 @@ export async function sendMessage(opts: SendOptions) {
     storedText = "";
   }
 
-  const voidDurationSeconds = opts.voidModeDurationSec ?? null;
+  const voidDurationSeconds =
+    typeof opts.voidModeDurationSec === "number" && opts.voidModeDurationSec > 0
+      ? opts.voidModeDurationSec
+      : null;
   const voidExpiresAt = voidDurationSeconds ? computeExpiryIso(voidDurationSeconds) : null;
-  const disappearingExpiresAt = opts.expiresInSec ? computeExpiryIso(opts.expiresInSec) : null;
-  const expiresAt = voidExpiresAt ?? disappearingExpiresAt;
 
   const basePayload = {
     conversation_id: opts.conversationId,
@@ -392,55 +421,95 @@ export async function sendMessage(opts: SendOptions) {
     recipient_keys: {},
     media_path: mediaPath,
     reply_to: opts.replyTo ?? null,
-    expires_at: expiresAt,
   };
 
   let insertedMessage: { id: string } | null = null;
-
-  if (voidDurationSeconds) {
-    const withVoidColumns = await supabase
-      .from("messages")
-      .insert({
-        ...basePayload,
-        is_void_mode: true,
-        void_expires_at: voidExpiresAt,
-        void_duration_seconds: voidDurationSeconds,
-      })
-      .select("id")
-      .single();
-
-    if (withVoidColumns.error) {
-      if (!isMissingVoidColumnsError(withVoidColumns.error)) {
-        throw withVoidColumns.error;
-      }
-
-      // Backward-compatible fallback until migration is applied.
-      // We still preserve expiry via `expires_at`.
-      const legacyInsert = await supabase
+  try {
+    if (voidDurationSeconds) {
+      const withVoidColumns = await supabase
         .from("messages")
-        .insert(basePayload)
+        .insert({
+          ...basePayload,
+          is_void_mode: true,
+          void_expires_at: voidExpiresAt,
+          void_duration_seconds: voidDurationSeconds,
+          expires_at: voidExpiresAt,
+        })
         .select("id")
         .single();
-      if (legacyInsert.error) throw legacyInsert.error;
-      insertedMessage = legacyInsert.data;
-    } else {
-      insertedMessage = withVoidColumns.data;
-    }
-  } else {
-    const regularInsert = await supabase.from("messages").insert(basePayload).select("id").single();
-    if (regularInsert.error) throw regularInsert.error;
-    insertedMessage = regularInsert.data;
-  }
 
-  const { error: conversationError } = await supabase
-    .from("conversations")
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", opts.conversationId);
-  if (conversationError) throw conversationError;
+      if (withVoidColumns.error) {
+        if (!isMissingVoidColumnsError(withVoidColumns.error)) {
+          throw withVoidColumns.error;
+        }
+
+        // Legacy fallback for environments missing void columns.
+        const legacyInsert = await supabase
+          .from("messages")
+          .insert({
+            ...basePayload,
+            expires_at: voidExpiresAt,
+          })
+          .select("id")
+          .single();
+        if (legacyInsert.error) throw legacyInsert.error;
+        insertedMessage = legacyInsert.data;
+      } else {
+        insertedMessage = withVoidColumns.data;
+      }
+    } else {
+      const regularInsert = await supabase
+        .from("messages")
+        .insert({
+          ...basePayload,
+          is_void_mode: false,
+          void_expires_at: null,
+          void_duration_seconds: null,
+          expires_at: null,
+        })
+        .select("id")
+        .single();
+
+      if (regularInsert.error) {
+        if (!isMissingVoidColumnsError(regularInsert.error)) {
+          throw regularInsert.error;
+        }
+
+        // Legacy fallback for environments missing void columns.
+        const legacyInsert = await supabase
+          .from("messages")
+          .insert({
+            ...basePayload,
+            expires_at: null,
+          })
+          .select("id")
+          .single();
+        if (legacyInsert.error) throw legacyInsert.error;
+        insertedMessage = legacyInsert.data;
+      } else {
+        insertedMessage = regularInsert.data;
+      }
+    }
+
+    const { error: conversationError } = await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", opts.conversationId);
+    if (conversationError) throw conversationError;
+  } catch (error) {
+    if (mediaPath && !insertedMessage?.id) {
+      const { error: cleanupError } = await supabase.storage.from("chat-media").remove([mediaPath]);
+      if (cleanupError) {
+        console.error("Failed to clean up orphaned media after send failure", cleanupError);
+      }
+    }
+    throw error;
+  }
 
   if (insertedMessage?.id) {
     void dispatchNewMessagePush(insertedMessage.id).catch((error) => {
-      console.error("Push dispatch failed", error);
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      console.error("Push dispatch failed", message);
     });
   }
 }

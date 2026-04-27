@@ -344,6 +344,14 @@ function SettingsPage() {
 
     try {
       await updateAvatarField(null);
+
+      const storagePath = buildAvatarStoragePath(profile.id);
+      const { error: storageDeleteError } = await supabase.storage
+        .from("avatars")
+        .remove([storagePath]);
+      if (storageDeleteError) {
+        console.warn("Failed to delete avatar asset from storage", storageDeleteError);
+      }
       toast.success("Avatar removed");
       emitConstellationSignal("highlight");
     } catch (error) {

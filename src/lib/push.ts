@@ -4,6 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 
 const PUSH_PERMISSION_REQUESTED_KEY = "void.push.permission.requested.v1";
 const TOKEN_WAIT_TIMEOUT_MS = 15000;
+const PUSH_DISPATCH_ENABLED_IN_DEV = import.meta.env.VITE_ENABLE_PUSH_DISPATCH_IN_DEV === "true";
+const CAN_DISPATCH_PUSH = !import.meta.env.DEV || PUSH_DISPATCH_ENABLED_IN_DEV;
+
+let hasLoggedPushDispatchDevSkip = false;
+let hasLoggedPushFunctionMissing = false;
+let lastPushDispatchFetchErrorAt = 0;
 
 type PushTokenRow = {
   user_id: string;
@@ -51,8 +57,8 @@ async function requestPushPermissionOnce() {
     if (hasRequestedPermissionBefore()) {
       return "skipped" as const;
     }
-    markPermissionRequested();
     const requested = await PushNotifications.requestPermissions();
+    markPermissionRequested();
     receive = requested.receive;
   }
 
@@ -158,8 +164,54 @@ export async function registerAndStorePushToken(userId: string): Promise<PushReg
 export async function dispatchNewMessagePush(messageId: string) {
   if (!messageId) return;
 
+  if (!CAN_DISPATCH_PUSH) {
+    if (!hasLoggedPushDispatchDevSkip) {
+      hasLoggedPushDispatchDevSkip = true;
+      console.info(
+        "Push dispatch skipped in development. Set VITE_ENABLE_PUSH_DISPATCH_IN_DEV=true to enable.",
+      );
+    }
+    return;
+  }
+
   const { error } = await supabase.functions.invoke("dispatch-message-push", {
     body: { messageId },
   });
-  if (error) throw error;
+  if (!error) return;
+
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+        ? error
+        : JSON.stringify(error);
+
+  const missingFunction =
+    message.includes("NOT_FOUND") ||
+    message.includes("Requested function was not found") ||
+    message.includes("404");
+
+  if (missingFunction) {
+    if (!hasLoggedPushFunctionMissing) {
+      hasLoggedPushFunctionMissing = true;
+      console.warn(
+        "Push dispatch edge function is unavailable (dispatch-message-push). Deploy it to Supabase to enable notifications.",
+      );
+    }
+    return;
+  }
+
+  const fetchFailure =
+    message.includes("FunctionsFetchError") ||
+    message.includes("Failed to send a request to the Edge Function");
+  if (fetchFailure) {
+    const now = Date.now();
+    if (now - lastPushDispatchFetchErrorAt > 30_000) {
+      lastPushDispatchFetchErrorAt = now;
+      console.warn("Push dispatch temporarily unavailable. Retrying on next message.");
+    }
+    return;
+  }
+
+  throw error;
 }

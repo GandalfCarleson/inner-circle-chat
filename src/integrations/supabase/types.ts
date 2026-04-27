@@ -6,8 +6,6 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-// Generated Supabase types still include several encryption-era fields kept for
-// database compatibility. The current frontend uses this schema as a plain chat app.
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
@@ -16,6 +14,53 @@ export type Database = {
   }
   public: {
     Tables: {
+      call_sessions: {
+        Row: {
+          accepted_at: string | null
+          callee_user_id: string
+          caller_user_id: string
+          conversation_id: string
+          created_at: string
+          ended_at: string | null
+          id: string
+          status: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          callee_user_id: string
+          caller_user_id: string
+          conversation_id: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          status: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          accepted_at?: string | null
+          callee_user_id?: string
+          caller_user_id?: string
+          conversation_id?: string
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          status?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_sessions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_members: {
         Row: {
           conversation_id: string
@@ -57,6 +102,8 @@ export type Database = {
           created_at: string
           created_by: string
           disappearing_seconds: number | null
+          dm_user_high: string | null
+          dm_user_low: string | null
           id: string
           name: string | null
           type: Database["public"]["Enums"]["conversation_type"]
@@ -67,6 +114,8 @@ export type Database = {
           created_at?: string
           created_by: string
           disappearing_seconds?: number | null
+          dm_user_high?: string | null
+          dm_user_low?: string | null
           id?: string
           name?: string | null
           type?: Database["public"]["Enums"]["conversation_type"]
@@ -77,6 +126,8 @@ export type Database = {
           created_at?: string
           created_by?: string
           disappearing_seconds?: number | null
+          dm_user_high?: string | null
+          dm_user_low?: string | null
           id?: string
           name?: string | null
           type?: Database["public"]["Enums"]["conversation_type"]
@@ -254,6 +305,33 @@ export type Database = {
         }
         Relationships: []
       }
+      push_tokens: {
+        Row: {
+          created_at: string
+          id: string
+          platform: string
+          token: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          platform: string
+          token: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          platform?: string
+          token?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       read_receipts: {
         Row: {
           message_id: string
@@ -285,9 +363,11 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      delete_my_account: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
+      delete_my_account: { Args: never; Returns: undefined }
+      find_or_create_dm: { Args: { other_user_id: string }; Returns: string }
+      is_conversation_creator: {
+        Args: { _conv: string; _user: string }
+        Returns: boolean
       }
       is_conversation_member: {
         Args: { _conv: string; _user: string }

@@ -12,7 +12,6 @@ import {
   Send,
   Smile,
   Sparkles,
-  Timer,
   Trash2,
   Video,
   X,
@@ -74,9 +73,14 @@ interface ReactionRow {
 
 const QUICK_EMOJIS = ["❤️", "😂", "🔥", "👍", "😮", "😢"];
 const IMAGE_ACCEPT_PREFIX = "image/";
-const AUDIO_MIME_TYPE = "audio/webm";
 const TYPING_INDICATOR_TIMEOUT_MS = 3500;
 const TYPING_BROADCAST_THROTTLE_MS = 1200;
+const AUDIO_MIME_CANDIDATES = [
+  "audio/mp4",
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/ogg;codecs=opus",
+];
 
 // Legacy schema note:
 // messages.ciphertext still stores plain text for compatibility with the original schema.
@@ -104,9 +108,9 @@ function formatLastSeen(dateString: string) {
 function getMessageExpiry(
   message: Pick<MessageRow, "is_void_mode" | "void_expires_at" | "expires_at">,
 ) {
-  return message.is_void_mode
-    ? (message.void_expires_at ?? message.expires_at)
-    : message.expires_at;
+  if (!message.is_void_mode) return null;
+  // Legacy fallback when older rows populated only `expires_at` for void content.
+  return message.void_expires_at ?? message.expires_at;
 }
 
 function isMessageExpired(
@@ -176,12 +180,24 @@ async function fetchConversationMessages(conversationId: string): Promise<Messag
     .from("messages")
     .select("*")
     .eq("conversation_id", conversationId)
-    .or("expires_at.is.null,expires_at.gt.now()")
     .order("created_at", { ascending: true })
     .limit(200);
 
   if (error) throw error;
   return (data ?? []) as MessageRow[];
+}
+
+function getSupportedAudioMimeType() {
+  if (typeof MediaRecorder === "undefined") return null;
+  if (typeof MediaRecorder.isTypeSupported !== "function") return null;
+
+  for (const candidate of AUDIO_MIME_CANDIDATES) {
+    if (MediaRecorder.isTypeSupported(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 async function fetchReactionRows(messageIds: string[]) {
@@ -241,7 +257,6 @@ function ChatPage() {
   const [convMeta, setConvMeta] = useState<{
     name: string | null;
     type: string;
-    disappearing_seconds: number | null;
   } | null>(null);
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
@@ -250,7 +265,6 @@ function ChatPage() {
   const [replyTargetId, setReplyTargetId] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [showEmojiFor, setShowEmojiFor] = useState<string | null>(null);
-  const [disappearing, setDisappearing] = useState<number | null>(null);
   const [voidModeDurationSeconds, setVoidModeDurationSeconds] = useState<number | null>(null);
   const [voidModeSheetOpen, setVoidModeSheetOpen] = useState(false);
   const [voidModeDraftDurationSeconds, setVoidModeDraftDurationSeconds] = useState(60);
@@ -440,7 +454,7 @@ function ChatPage() {
           await Promise.all([
             supabase
               .from("conversations")
-              .select("name, type, disappearing_seconds")
+              .select("name, type")
               .eq("id", convId)
               .maybeSingle(),
             fetchConversationMembers(convId),
@@ -457,7 +471,6 @@ function ChatPage() {
         if (cancelled) return;
 
         setConvMeta(conversation ?? null);
-        setDisappearing(conversation?.disappearing_seconds ?? null);
         setMembers(nextMembers);
         setLastReadAt(ownMembership.data?.last_read_at ?? null);
       } catch (error) {
@@ -475,7 +488,7 @@ function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [convId, emitIncomingPulse, emitOutgoingPulse, user]);
+  }, [convId, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -532,7 +545,7 @@ function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [convId, emitIncomingPulse, emitOutgoingPulse, user]);
+  }, [convId, user]);
 
   useEffect(() => {
     messageIdsRef.current = messages.map((message) => message.id);
@@ -541,14 +554,6 @@ function ChatPage() {
 
   useEffect(() => {
     if (!user) return;
-
-    async function refreshReactionsForCurrentMessages() {
-      try {
-        setReactions(await fetchReactionRows(messageIdsRef.current));
-      } catch (error) {
-        console.error("Failed to refresh reactions", error);
-      }
-    }
 
     // Keep the chat screen in sync without forcing full reloads after every insert/update.
     const channel = supabase
@@ -616,8 +621,15 @@ function ChatPage() {
           setReplyTargetId((current) => (current === deletedId ? null : current));
         },
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "message_reactions" }, () => {
-        void refreshReactionsForCurrentMessages();
+      .on("postgres_changes", { event: "*", schema: "public", table: "message_reactions" }, (payload) => {
+        const reactionPayload = payload as {
+          new?: { message_id?: string };
+          old?: { message_id?: string };
+        };
+        const messageId = reactionPayload.new?.message_id ?? reactionPayload.old?.message_id;
+        if (!messageId) return;
+        if (!messageIdsRef.current.includes(messageId)) return;
+        void refreshReactionsAfterMutation(messageId);
       })
       .subscribe();
 
@@ -1038,7 +1050,6 @@ function ChatPage() {
         type: "text",
         text: bodyText,
         replyTo: replyTarget?.id ?? null,
-        expiresInSec: disappearing,
         voidModeDurationSec: voidModeActive ? voidModeDurationSeconds : null,
       });
       setReplyTargetId(null);
@@ -1068,7 +1079,6 @@ function ChatPage() {
         type: "image",
         blob: file,
         replyTo: replyTarget?.id ?? null,
-        expiresInSec: disappearing,
         voidModeDurationSec: voidModeActive ? voidModeDurationSeconds : null,
       });
       setReplyTargetId(null);
@@ -1082,8 +1092,16 @@ function ChatPage() {
     if (recording) return;
 
     try {
+      if (typeof MediaRecorder === "undefined") {
+        throw new Error("Voice recording is not supported on this device.");
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: AUDIO_MIME_TYPE });
+      const preferredMimeType = getSupportedAudioMimeType();
+      const recorder = preferredMimeType
+        ? new MediaRecorder(stream, { mimeType: preferredMimeType })
+        : new MediaRecorder(stream);
+      const recorderMimeType = recorder.mimeType || preferredMimeType || "audio/webm";
 
       chunksRef.current = [];
       recorder.ondataavailable = (event) => {
@@ -1091,7 +1109,7 @@ function ChatPage() {
       };
       recorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
-        const audioBlob = new Blob(chunksRef.current, { type: AUDIO_MIME_TYPE });
+        const audioBlob = new Blob(chunksRef.current, { type: recorderMimeType });
         chunksRef.current = [];
 
         if (!user || audioBlob.size === 0) return;
@@ -1103,7 +1121,6 @@ function ChatPage() {
             type: "voice",
             blob: audioBlob,
             replyTo: replyTarget?.id ?? null,
-            expiresInSec: disappearing,
             voidModeDurationSec: voidModeActive ? voidModeDurationSeconds : null,
           });
           setReplyTargetId(null);
@@ -1118,7 +1135,7 @@ function ChatPage() {
       setRecording(true);
     } catch (error) {
       console.error("Microphone access failed", error);
-      toast.error("Microphone permission denied");
+      toast.error(error instanceof Error ? error.message : "Microphone permission denied");
     }
   }
 
@@ -1167,24 +1184,6 @@ function ChatPage() {
     } catch (error) {
       console.error("Failed to delete message", error);
       toast.error("Couldn't delete this message.");
-    }
-  }
-
-  async function setDisappearingMode(seconds: number | null) {
-    setDisappearing(seconds);
-
-    try {
-      const { error } = await supabase
-        .from("conversations")
-        .update({ disappearing_seconds: seconds })
-        .eq("id", convId);
-
-      if (error) throw error;
-      toast.success(seconds ? `Messages will vanish after ${seconds}s` : "Disappearing off");
-    } catch (error) {
-      console.error("Failed to update disappearing mode", error);
-      toast.error("Couldn't update disappearing messages.");
-      setDisappearing(convMeta?.disappearing_seconds ?? null);
     }
   }
 
@@ -1311,18 +1310,6 @@ function ChatPage() {
                 </button>
               </>
             )}
-
-            <button
-              onClick={() => void setDisappearingMode(disappearing ? null : 60)}
-              className={`interactive-surface quiet-hover inline-flex h-10 w-10 items-center justify-center rounded-2xl border text-muted-foreground md:h-11 md:w-11 ${
-                disappearing
-                  ? "border-white/16 bg-white/[0.08] text-foreground"
-                  : "border-white/10 hover:text-foreground"
-              }`}
-              title="Disappearing messages"
-            >
-              <Timer className="h-3.5 w-3.5" />
-            </button>
 
             {showVoidModeAction && (
               <button
@@ -1554,15 +1541,15 @@ function ChatPage() {
                   </div>
 
                   <span
-                    className={`mt-2 px-2 text-[10px] uppercase tracking-[0.12em] text-white/30 ${
-                      reactionSummary.length > 0 ? "mt-5" : ""
-                    }`}
-                  >
-                    {format(new Date(message.created_at), "HH:mm")}
-                    {voidMessage ? " · void" : message.expires_at ? " · vanishes" : ""}
-                  </span>
-                </div>
-              );
+                  className={`mt-2 px-2 text-[10px] uppercase tracking-[0.12em] text-white/30 ${
+                    reactionSummary.length > 0 ? "mt-5" : ""
+                  }`}
+                >
+                  {format(new Date(message.created_at), "HH:mm")}
+                  {voidMessage ? " · void" : ""}
+                </span>
+              </div>
+            );
             })}
           </div>
         </div>
