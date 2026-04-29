@@ -57,7 +57,7 @@ export function CallScreen({
   }, [remoteStream]);
 
   return (
-    <div className="safe-inset fixed inset-0 z-[80] flex flex-col justify-between bg-[radial-gradient(circle_at_top,_rgba(185,78,86,0.18),_transparent_45%),linear-gradient(180deg,#161b26,#11161f)]">
+    <div className="safe-inset fixed inset-0 z-[80] flex flex-col justify-between bg-[radial-gradient(circle_at_top,_rgba(241,137,69,0.16),_transparent_45%),linear-gradient(180deg,#050505,#0a0a0a)]">
       <audio ref={remoteAudioRef} autoPlay playsInline />
 
       <div className="pt-5 text-center">
@@ -72,8 +72,8 @@ export function CallScreen({
         </p>
       </div>
 
-      <div className="mx-auto mt-8 flex h-44 w-44 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
-        <span className="text-6xl font-semibold uppercase tracking-[-0.06em] text-white/78">
+      <div className="mx-auto mt-8 flex h-44 w-44 items-center justify-center rounded-full border border-white/12 bg-white/[0.03] shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+        <span className="text-6xl font-semibold uppercase tracking-[-0.06em] text-white/76">
           {activeCall.peerDisplayName.slice(0, 1)}
         </span>
       </div>
@@ -83,7 +83,7 @@ export function CallScreen({
           onClick={onToggleMute}
           className={`inline-flex h-14 w-14 items-center justify-center rounded-full border transition-colors ${
             isMuted
-              ? "border-amber-300/30 bg-amber-500/20 text-amber-100"
+              ? "border-orange-300/30 bg-orange-500/20 text-orange-100"
               : "border-white/14 bg-white/[0.06] text-foreground hover:bg-white/[0.1]"
           }`}
           aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}

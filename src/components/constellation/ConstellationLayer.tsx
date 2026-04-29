@@ -58,9 +58,9 @@ export function ConstellationLayer({
       <svg viewBox="0 0 100 100" className={cn("constellation-lines", lineClassName)} aria-hidden="true">
         <defs>
           <linearGradient id={`constellation-edge-${mode}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(137,103,226,0.78)" />
-            <stop offset="58%" stopColor="rgba(87,194,243,0.62)" />
-            <stop offset="100%" stopColor="rgba(242,171,98,0.58)" />
+            <stop offset="0%" stopColor="rgba(238,230,220,0.72)" />
+            <stop offset="58%" stopColor="rgba(238,141,72,0.58)" />
+            <stop offset="100%" stopColor="rgba(200,79,44,0.52)" />
           </linearGradient>
         </defs>
         {preset.edges.map((edge, index) => {

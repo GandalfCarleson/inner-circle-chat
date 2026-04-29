@@ -1645,7 +1645,7 @@ function ChatPage() {
               {text.trim() ? (
                 <button
                   onClick={() => void handleSendText()}
-                  className="chat-send-button inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_34px_rgba(30,17,58,0.32)] quiet-hover hover:translate-y-[-1px] hover:opacity-95 md:h-11 md:w-11"
+                  className="chat-send-button inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_16px_34px_rgba(63,27,12,0.28)] quiet-hover hover:translate-y-[-1px] hover:opacity-95 md:h-11 md:w-11"
                   aria-label="Send"
                 >
                   <Send className="h-4 w-4" />

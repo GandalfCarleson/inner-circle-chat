@@ -94,7 +94,7 @@ export function VideoCallScreen({
           className="absolute inset-0 h-full w-full object-cover"
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(185,78,86,0.22),_transparent_52%),linear-gradient(180deg,#131823,#0d1118)]">
+        <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(241,137,69,0.2),_transparent_52%),linear-gradient(180deg,#050505,#0b0b0b)]">
           <span className="text-[48px] font-semibold uppercase tracking-[-0.06em] text-white/78">
             {activeCall.peerDisplayName.slice(0, 1)}
           </span>
@@ -137,7 +137,7 @@ export function VideoCallScreen({
             onClick={onToggleMute}
             className={`inline-flex h-14 w-14 items-center justify-center rounded-full border transition-colors ${
               isMuted
-                ? "border-amber-300/30 bg-amber-500/20 text-amber-100"
+                ? "border-orange-300/30 bg-orange-500/20 text-orange-100"
                 : "border-white/22 bg-black/35 text-white hover:bg-black/48"
             }`}
             aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
@@ -150,7 +150,7 @@ export function VideoCallScreen({
             className={`inline-flex h-14 w-14 items-center justify-center rounded-full border transition-colors ${
               isCameraEnabled
                 ? "border-white/22 bg-black/35 text-white hover:bg-black/48"
-                : "border-amber-300/30 bg-amber-500/20 text-amber-100"
+                : "border-orange-300/30 bg-orange-500/20 text-orange-100"
             }`}
             aria-label={isCameraEnabled ? "Turn camera off" : "Turn camera on"}
           >

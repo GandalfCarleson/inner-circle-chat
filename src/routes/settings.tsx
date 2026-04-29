@@ -621,7 +621,7 @@ function SettingsPage() {
 
           <div className="section-blend mt-6 rounded-[24px] p-4 sm:p-5">
             <div className="mb-2 flex items-center gap-2">
-              <TriangleAlert className="h-4 w-4 text-amber-500" />
+              <TriangleAlert className="h-4 w-4 text-primary" />
               <h2 className="text-sm text-foreground">Account</h2>
             </div>
             <p className="text-xs text-muted-foreground">
