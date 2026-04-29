@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { isNativeApp } from "@/lib/native";
 import { registerAndStorePushToken } from "@/lib/push";
 
-const PUSH_ENABLED_IN_DEV = import.meta.env.VITE_ENABLE_PUSH_IN_DEV === "true";
+const PUSH_ENABLED_IN_DEV = import.meta.env.VITE_ENABLE_PUSH_IN_DEV !== "false";
 const CAN_REGISTER_PUSH = !import.meta.env.DEV || PUSH_ENABLED_IN_DEV;
 
 function readConversationIdFromNotification(

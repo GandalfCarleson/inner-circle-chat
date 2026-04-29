@@ -255,7 +255,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const startOutgoingCall = useCallback(
     async ({ conversationId, calleeUserId, calleeDisplayName, type }: StartOutgoingCallArgs) => {
       if (!CALLING_ENABLED) {
-        throw new Error("Calling is coming soon.");
+        throw new Error("Calling is disabled for this build.");
       }
 
       if (!user?.id) {

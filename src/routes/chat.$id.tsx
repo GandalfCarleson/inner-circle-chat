@@ -1207,7 +1207,7 @@ function ChatPage() {
   async function handleStartCall(type: "audio" | "video") {
     if (!user) return;
     if (!CALLING_ENABLED) {
-      toast.message("Calling is coming soon.");
+      toast.message("Calling is disabled for this build.");
       return;
     }
 

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 const PUSH_PERMISSION_REQUESTED_KEY = "void.push.permission.requested.v1";
 const TOKEN_WAIT_TIMEOUT_MS = 15000;
-const PUSH_DISPATCH_ENABLED_IN_DEV = import.meta.env.VITE_ENABLE_PUSH_DISPATCH_IN_DEV === "true";
+const PUSH_DISPATCH_ENABLED_IN_DEV = import.meta.env.VITE_ENABLE_PUSH_DISPATCH_IN_DEV !== "false";
 const CAN_DISPATCH_PUSH = !import.meta.env.DEV || PUSH_DISPATCH_ENABLED_IN_DEV;
 
 let hasLoggedPushDispatchDevSkip = false;
@@ -168,7 +168,7 @@ export async function dispatchNewMessagePush(messageId: string) {
     if (!hasLoggedPushDispatchDevSkip) {
       hasLoggedPushDispatchDevSkip = true;
       console.info(
-        "Push dispatch skipped in development. Set VITE_ENABLE_PUSH_DISPATCH_IN_DEV=true to enable.",
+        "Push dispatch skipped in development. Set VITE_ENABLE_PUSH_DISPATCH_IN_DEV=true to re-enable.",
       );
     }
     return;
