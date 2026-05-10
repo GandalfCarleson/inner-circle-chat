@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
+import { App } from "@capacitor/app";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { useAuth } from "@/contexts/AuthContext";
 import { isNativeApp } from "@/lib/native";
@@ -19,19 +20,66 @@ function readConversationIdFromNotification(
 export function usePushNotifications() {
   const { user } = useAuth();
   const router = useRouter();
-  const registeredForUserRef = useRef<string | null>(null);
+  const registrationCompletedForUserRef = useRef<string | null>(null);
+  const registrationInFlightRef = useRef(false);
+
+  const attemptPushRegistration = useCallback(async () => {
+    if (!CAN_REGISTER_PUSH) return;
+    if (!user || !isNativeApp()) return;
+    if (registrationCompletedForUserRef.current === user.id) return;
+    if (registrationInFlightRef.current) return;
+
+    registrationInFlightRef.current = true;
+    try {
+      const result = await registerAndStorePushToken(user.id);
+      if (result.status === "granted") {
+        registrationCompletedForUserRef.current = user.id;
+      }
+      if ((import.meta.env.DEV || import.meta.env.MODE === "test") && result.status !== "granted") {
+        console.info("[push] Registration not completed", result);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : JSON.stringify(error);
+      console.error("Push registration failed", message);
+    } finally {
+      registrationInFlightRef.current = false;
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      registrationCompletedForUserRef.current = null;
+      registrationInFlightRef.current = false;
+      return;
+    }
+    void attemptPushRegistration();
+  }, [attemptPushRegistration, user]);
 
   useEffect(() => {
     if (!CAN_REGISTER_PUSH) return;
-    if (!user || !isNativeApp()) return;
-    if (registeredForUserRef.current === user.id) return;
-    registeredForUserRef.current = user.id;
+    if (!isNativeApp()) return;
 
-    void registerAndStorePushToken(user.id).catch((error) => {
-      const message = error instanceof Error ? error.message : JSON.stringify(error);
-      console.error("Push registration failed", message);
-    });
-  }, [user]);
+    let handle:
+      | {
+          remove: () => Promise<void>;
+        }
+      | undefined;
+
+    void App.addListener("appStateChange", ({ isActive }) => {
+      if (!isActive) return;
+      void attemptPushRegistration();
+    })
+      .then((listener) => {
+        handle = listener;
+      })
+      .catch((error) => {
+        console.error("Failed to attach appStateChange listener for push retry", error);
+      });
+
+    return () => {
+      void handle?.remove();
+    };
+  }, [attemptPushRegistration]);
 
   useEffect(() => {
     if (!CAN_REGISTER_PUSH) return;
@@ -51,11 +99,14 @@ export function usePushNotifications() {
 
     void (async () => {
       try {
-        actionHandle = await PushNotifications.addListener("pushNotificationActionPerformed", (event) => {
-          const conversationId = readConversationIdFromNotification(event.notification);
-          if (!conversationId) return;
-          router.navigate({ to: "/chat/$id", params: { id: conversationId } });
-        });
+        actionHandle = await PushNotifications.addListener(
+          "pushNotificationActionPerformed",
+          (event) => {
+            const conversationId = readConversationIdFromNotification(event.notification);
+            if (!conversationId) return;
+            router.navigate({ to: "/chat/$id", params: { id: conversationId } });
+          },
+        );
 
         receivedHandle = await PushNotifications.addListener("pushNotificationReceived", () => {
           // Native foreground presentation is configured in capacitor.config.ts.

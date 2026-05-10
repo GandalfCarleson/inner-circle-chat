@@ -308,6 +308,7 @@ export type Database = {
       push_tokens: {
         Row: {
           created_at: string
+          device_info: Json
           id: string
           platform: string
           token: string
@@ -316,6 +317,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          device_info?: Json
           id?: string
           platform: string
           token: string
@@ -324,6 +326,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          device_info?: Json
           id?: string
           platform?: string
           token?: string
@@ -372,6 +375,10 @@ export type Database = {
       is_conversation_member: {
         Args: { _conv: string; _user: string }
         Returns: boolean
+      }
+      register_push_token: {
+        Args: { p_device_info?: Json; p_platform: string; p_token: string }
+        Returns: string
       }
     }
     Enums: {

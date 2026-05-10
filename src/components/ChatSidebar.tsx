@@ -1,4 +1,5 @@
 import { Link, useRouter } from "@tanstack/react-router";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePresence } from "@/contexts/PresenceContext";
@@ -129,67 +130,71 @@ export function ChatSidebar({ activeId }: Props) {
     // Sidebar only needs lightweight refresh triggers, not full message polling.
     const channel = supabase
       .channel("sidebar-messages")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
-        const inserted = payload.new as {
-          conversation_id?: string;
-          sender_id?: string;
-          created_at?: string;
-          ciphertext?: string;
-          nonce?: string;
-          recipient_keys?: Record<string, string>;
-          type?: string;
-          is_void_mode?: boolean;
-          void_expires_at?: string | null;
-          void_duration_seconds?: number | null;
-        };
-        const conversationId = inserted.conversation_id;
-        if (!conversationId) return;
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        (payload) => {
+          const inserted = payload.new as {
+            conversation_id?: string;
+            sender_id?: string;
+            created_at?: string;
+            ciphertext?: string;
+            nonce?: string;
+            recipient_keys?: Record<string, string>;
+            type?: string;
+            is_void_mode?: boolean;
+            void_expires_at?: string | null;
+            void_duration_seconds?: number | null;
+          };
+          const conversationId = inserted.conversation_id;
+          if (!conversationId) return;
 
-        if (!conversationIdsRef.current.has(conversationId)) {
-          void loadSidebarState();
-          return;
-        }
+          if (!conversationIdsRef.current.has(conversationId)) {
+            void loadSidebarState();
+            return;
+          }
 
-        setConversations((current) => {
-          let didUpdate = false;
-          const next = current.map((conversation) => {
-            if (conversation.id !== conversationId) return conversation;
-            didUpdate = true;
-            const createdAt = inserted.created_at ?? conversation.updated_at;
-            return {
-              ...conversation,
-              updated_at: createdAt,
-              last_message: {
-                ciphertext: inserted.ciphertext ?? "",
-                nonce: inserted.nonce ?? "",
-                recipient_keys: inserted.recipient_keys ?? {},
-                sender_id: inserted.sender_id ?? "",
-                type: inserted.type ?? "text",
-                is_void_mode: Boolean(inserted.is_void_mode),
-                void_expires_at: inserted.void_expires_at ?? null,
-                void_duration_seconds:
-                  typeof inserted.void_duration_seconds === "number"
-                    ? inserted.void_duration_seconds
-                    : null,
-                created_at: createdAt,
-              },
-            };
+          setConversations((current) => {
+            let didUpdate = false;
+            const next = current.map((conversation) => {
+              if (conversation.id !== conversationId) return conversation;
+              didUpdate = true;
+              const createdAt = inserted.created_at ?? conversation.updated_at;
+              return {
+                ...conversation,
+                updated_at: createdAt,
+                last_message: {
+                  ciphertext: inserted.ciphertext ?? "",
+                  nonce: inserted.nonce ?? "",
+                  recipient_keys: inserted.recipient_keys ?? {},
+                  sender_id: inserted.sender_id ?? "",
+                  type: inserted.type ?? "text",
+                  is_void_mode: Boolean(inserted.is_void_mode),
+                  void_expires_at: inserted.void_expires_at ?? null,
+                  void_duration_seconds:
+                    typeof inserted.void_duration_seconds === "number"
+                      ? inserted.void_duration_seconds
+                      : null,
+                  created_at: createdAt,
+                },
+              };
+            });
+
+            if (!didUpdate) return current;
+            return [...next].sort(
+              (left, right) =>
+                new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
+            );
           });
 
-          if (!didUpdate) return current;
-          return [...next].sort(
-            (left, right) =>
-              new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime(),
-          );
-        });
-
-        if (inserted.sender_id && inserted.sender_id !== user.id && conversationId !== activeId) {
-          setUnreadCounts((current) => ({
-            ...current,
-            [conversationId]: (current[conversationId] ?? 0) + 1,
-          }));
-        }
-      })
+          if (inserted.sender_id && inserted.sender_id !== user.id && conversationId !== activeId) {
+            setUnreadCounts((current) => ({
+              ...current,
+              [conversationId]: (current[conversationId] ?? 0) + 1,
+            }));
+          }
+        },
+      )
       .on(
         "postgres_changes",
         {
@@ -287,10 +292,8 @@ export function ChatSidebar({ activeId }: Props) {
           lastMessageAt: conversation.last_message?.created_at ?? conversation.updated_at,
         };
       })
-      .filter(
-        (
-          row,
-        ): row is { conversationId: string; friendId: string; lastMessageAt: string } => Boolean(row),
+      .filter((row): row is { conversationId: string; friendId: string; lastMessageAt: string } =>
+        Boolean(row),
       )
       .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime())
       .slice(0, 14);
@@ -334,27 +337,32 @@ export function ChatSidebar({ activeId }: Props) {
   const inboxGradient = useGradient("inbox", {
     activity: Math.min(1, unreadTotal / 10 + onlinePresenceCount / 16),
   });
+  const sidebarStyle = useMemo(
+    () =>
+      ({
+        ...inboxGradient.style,
+        "--chat-sidebar-mobile-dock-height": "5.5rem",
+      }) as CSSProperties,
+    [inboxGradient.style],
+  );
 
   const navButtonClass =
     "interactive-surface quiet-hover inline-flex h-11 w-11 items-center justify-center rounded-2xl text-muted-foreground hover:text-foreground md:h-11 md:w-11 h-12 w-12 premium-elevated";
 
   useEffect(() => {
     emitConstellationSignal("focus");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (unreadTotal > 0) {
       emitConstellationSignal("incoming");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unreadTotal]);
 
   useEffect(() => {
     if (onlinePresenceCount > 0) {
       emitConstellationSignal("typing");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onlinePresenceCount]);
 
   useEffect(() => {
@@ -371,7 +379,8 @@ export function ChatSidebar({ activeId }: Props) {
       );
       if (cancelled) return;
 
-      const nextMetrics: Record<string, { totalMessages: number; lastMessageAt: string | null }> = {};
+      const nextMetrics: Record<string, { totalMessages: number; lastMessageAt: string | null }> =
+        {};
       for (const row of dmConversationRows) {
         nextMetrics[row.friendId] = {
           totalMessages: countsByConversation[row.conversationId] ?? 0,
@@ -391,7 +400,7 @@ export function ChatSidebar({ activeId }: Props) {
   return (
     <aside
       className="screen-theme-inbox inbox-shell-bg shell-noise screen-enter dynamic-gradient-transition relative flex h-full min-h-0 w-full flex-col overflow-hidden premium-border mobile-edge-to-edge md:w-[27rem] md:flex-row md:rounded-[34px]"
-      style={inboxGradient.style}
+      style={sidebarStyle}
     >
       <InboxConstellationLayer
         signal={constellationSignal}
@@ -429,8 +438,8 @@ export function ChatSidebar({ activeId }: Props) {
         </div>
       </div>
 
-      <div className="relative z-10 flex min-w-0 flex-1 flex-col">
-        <div className="safe-top-tight border-b subtle-divider px-4 pb-4 pt-3 md:px-5 md:pb-5 md:pt-5">
+      <div className="relative z-10 flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="safe-top-tight shrink-0 border-b subtle-divider px-4 pb-4 pt-3 md:px-5 md:pb-5 md:pt-5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <Avatar
@@ -493,7 +502,9 @@ export function ChatSidebar({ activeId }: Props) {
                   <div className="presence-ring flex h-12 w-12 items-center justify-center rounded-full bg-black/30 text-foreground">
                     <Plus className="h-4 w-4" />
                   </div>
-                  <p className="max-w-[3.5rem] truncate text-[11px] text-foreground/90">Your note</p>
+                  <p className="max-w-[3.5rem] truncate text-[11px] text-foreground/90">
+                    Your note
+                  </p>
                   <p className="text-[10px] uppercase tracking-[0.08em] text-white/34">New</p>
                 </button>
                 {presenceMembers.map((member) => (
@@ -542,7 +553,7 @@ export function ChatSidebar({ activeId }: Props) {
           )}
         </div>
 
-        <div className="mobile-scroll-padding flex-1 overflow-y-auto px-3 py-3 md:px-4 md:py-4">
+        <div className="mobile-scroll-padding min-h-0 flex-1 overflow-y-auto px-3 py-3 pb-[calc(var(--chat-sidebar-mobile-dock-height)+env(safe-area-inset-bottom)+24px)] md:px-4 md:py-4 md:pb-4">
           {filteredConversations.length === 0 ? (
             <div className="premium-panel-soft mx-2 mt-8 rounded-[28px] px-6 py-8 text-center">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-white/[0.04] text-white/70">
@@ -624,7 +635,7 @@ export function ChatSidebar({ activeId }: Props) {
           )}
         </div>
 
-        <div className="safe-bottom border-t subtle-divider px-4 py-3 md:px-5 md:py-4">
+        <div className="hidden border-t subtle-divider px-4 py-3 md:block md:px-5 md:py-4">
           <div className="glass-dock flex items-center gap-3 rounded-[24px] px-3 py-3">
             <Avatar name={profile?.display_name || profile?.username || "Unknown"} size="sm" />
             <div className="min-w-0 flex-1">
@@ -635,7 +646,23 @@ export function ChatSidebar({ activeId }: Props) {
                 @{profile?.username}
               </p>
             </div>
-            <div className="glass-dock flex items-center gap-1 rounded-full p-1 md:hidden">
+          </div>
+        </div>
+      </div>
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+        <div className="pointer-events-auto mx-auto w-full max-w-[28rem]">
+          <div className="glass-dock flex min-h-[var(--chat-sidebar-mobile-dock-height)] items-center gap-3 rounded-[24px] px-3 py-2">
+            <Avatar name={profile?.display_name || profile?.username || "Unknown"} size="sm" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">
+                {profile?.display_name || profile?.username}
+              </p>
+              <p className="truncate text-[11px] uppercase tracking-[0.15em] text-white/34">
+                @{profile?.username}
+              </p>
+            </div>
+            <div className="glass-dock flex items-center gap-1 rounded-full p-1">
               <Link to="/friends" className={navButtonClass} aria-label="Friends">
                 <Users className="h-4 w-4" />
               </Link>

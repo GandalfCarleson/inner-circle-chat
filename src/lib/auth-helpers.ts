@@ -12,5 +12,5 @@ export function normalizeUsername(username: string): string {
 }
 
 export function isValidUsername(username: string): boolean {
-  return /^[a-z0-9_]{3,24}$/i.test(username);
+  return /^[a-z0-9_]{3,20}$/.test(username);
 }

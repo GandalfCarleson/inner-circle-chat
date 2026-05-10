@@ -28,6 +28,20 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 
 const OUTGOING_RING_TIMEOUT_MS = 30_000;
+const CALL_TIMING_DEBUG = import.meta.env.DEV || import.meta.env.MODE === "test";
+
+function nowPerfMs() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+
+function logCallTiming(label: string, details?: Record<string, unknown>) {
+  if (!CALL_TIMING_DEBUG) return;
+  if (details) {
+    console.info(`[call-timing][context] ${label}`, details);
+    return;
+  }
+  console.info(`[call-timing][context] ${label}`);
+}
 
 interface StartOutgoingCallArgs {
   conversationId: string;
@@ -44,6 +58,7 @@ interface CallContextValue {
   connectionState: RTCPeerConnectionState;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  remoteVideoTrackCount: number;
   isMuted: boolean;
   isCameraEnabled: boolean;
   errorMessage: string | null;
@@ -73,6 +88,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const activeCallRef = useRef<ActiveCallDescriptor | null>(null);
   const userIdRef = useRef<string | null>(null);
   const silencedTerminalSessionIdsRef = useRef<Set<string>>(new Set());
+  const outgoingCallPressAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     activeCallRef.current = activeCall;
@@ -85,6 +101,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   const clearCallState = useCallback(() => {
     setIncomingCallVisible(false);
     setActiveCall(null);
+    outgoingCallPressAtRef.current = null;
   }, []);
 
   const recordTerminalSilence = useCallback((callSessionId: string) => {
@@ -118,22 +135,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    let peerDisplayName = "Unknown";
-
-    try {
-      const profile = await getCallPeerProfile(session.caller_user_id);
-      peerDisplayName = toDisplayName(profile, peerDisplayName);
-    } catch (error) {
-      console.error("Failed to resolve caller profile", error);
-    }
+    const approxServerToUiMs = Date.now() - Date.parse(session.created_at);
+    logCallTiming("incoming-ui-visible", {
+      approx_server_to_ui_ms: Number.isFinite(approxServerToUiMs) ? approxServerToUiMs : null,
+      session_id: session.id,
+    });
 
     setActiveCall({
       session,
       role: "callee",
       peerUserId: session.caller_user_id,
-      peerDisplayName,
+      peerDisplayName: "Unknown",
     });
     setIncomingCallVisible(true);
+
+    try {
+      const profile = await getCallPeerProfile(session.caller_user_id);
+      const peerDisplayName = toDisplayName(profile, "Unknown");
+      const current = activeCallRef.current;
+      if (!current || current.session.id !== session.id) return;
+      setActiveCall({ ...current, peerDisplayName });
+    } catch (error) {
+      console.error("Failed to resolve caller profile", error);
+    }
   }, []);
 
   const applySessionUpdate = useCallback(
@@ -154,6 +178,12 @@ export function CallProvider({ children }: { children: ReactNode }) {
       }
 
       if (session.status === "accepted") {
+        if (current.role === "caller" && outgoingCallPressAtRef.current !== null) {
+          logCallTiming("caller-observed-accepted", {
+            session_id: session.id,
+            to_accepted_ms: Math.round(nowPerfMs() - outgoingCallPressAtRef.current),
+          });
+        }
         setIncomingCallVisible(false);
         setActiveCall({ ...current, session });
         return;
@@ -239,12 +269,14 @@ export function CallProvider({ children }: { children: ReactNode }) {
     connectionState,
     localStream,
     remoteStream,
+    remoteVideoTrackCount,
     isMuted,
     isCameraEnabled,
     errorMessage,
     toggleMute,
     toggleCamera,
     sendControlSignal,
+    markAcceptStart,
   } = useCallSession({
     activeCall,
     currentUserId: user?.id ?? null,
@@ -266,11 +298,22 @@ export function CallProvider({ children }: { children: ReactNode }) {
         throw new Error("Finish your current call before starting another one.");
       }
 
+      const pressedAt = nowPerfMs();
+      outgoingCallPressAtRef.current = pressedAt;
+      logCallTiming("call-button-pressed", {
+        callee_user_id: calleeUserId,
+        type,
+      });
+
       const session = await createCallSession({
         conversationId,
         callerUserId: user.id,
         calleeUserId,
         type,
+      });
+      logCallTiming("call-session-created", {
+        session_id: session.id,
+        to_session_created_ms: Math.round(nowPerfMs() - pressedAt),
       });
 
       setIncomingCallVisible(false);
@@ -293,10 +336,9 @@ export function CallProvider({ children }: { children: ReactNode }) {
     if (!current || !currentUserId) return;
     if (current.role !== "callee" || current.session.status !== "ringing") return;
 
-    await setCallSessionStatus({
-      callSessionId: current.session.id,
-      participantUserId: currentUserId,
-      status: "accepted",
+    markAcceptStart();
+    logCallTiming("accept-tapped", {
+      session_id: current.session.id,
     });
 
     setIncomingCallVisible(false);
@@ -308,7 +350,23 @@ export function CallProvider({ children }: { children: ReactNode }) {
         accepted_at: new Date().toISOString(),
       },
     });
-  }, []);
+
+    try {
+      await setCallSessionStatus({
+        callSessionId: current.session.id,
+        participantUserId: currentUserId,
+        status: "accepted",
+      });
+      logCallTiming("accept-persisted", {
+        session_id: current.session.id,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to persist accepted call session.";
+      toast.error(message);
+      clearCallState();
+    }
+  }, [clearCallState, markAcceptStart]);
 
   const declineIncomingCall = useCallback(async () => {
     if (!CALLING_ENABLED) return;
@@ -508,6 +566,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       connectionState,
       localStream,
       remoteStream,
+      remoteVideoTrackCount,
       isMuted,
       isCameraEnabled,
       errorMessage,
@@ -525,6 +584,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       connectionState,
       localStream,
       remoteStream,
+      remoteVideoTrackCount,
       isMuted,
       isCameraEnabled,
       errorMessage,

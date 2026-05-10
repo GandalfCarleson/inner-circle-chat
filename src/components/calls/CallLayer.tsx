@@ -12,6 +12,7 @@ export function CallLayer() {
     connectionState,
     localStream,
     remoteStream,
+    remoteVideoTrackCount,
     isMuted,
     isCameraEnabled,
     errorMessage,
@@ -50,6 +51,7 @@ export function CallLayer() {
             connectionState={connectionState}
             localStream={localStream}
             remoteStream={remoteStream}
+            remoteVideoTrackCount={remoteVideoTrackCount}
             isMuted={isMuted}
             isCameraEnabled={isCameraEnabled}
             errorMessage={errorMessage}

@@ -1,11 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Session, User } from "@supabase/supabase-js";
-import {
-  normalizeUsername,
-  usernameToEmail,
-  isValidUsername,
-} from "@/lib/auth-helpers";
+import { normalizeUsername, usernameToEmail, isValidUsername } from "@/lib/auth-helpers";
 
 export interface Profile {
   id: string;
@@ -90,7 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signUp(username: string, password: string, displayName?: string) {
     const normalizedUsername = normalizeUsername(username);
     if (!isValidUsername(normalizedUsername)) {
-      throw new Error("Username must be 3-24 chars: letters, numbers, underscore.");
+      throw new Error(
+        "Username must be 3-20 characters and use only letters, numbers, or underscore.",
+      );
     }
     if (password.length < 8) throw new Error("Password must be at least 8 characters.");
 
@@ -114,6 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) {
+      if (/already registered|user already exists/i.test(error.message)) {
+        throw new Error("That username is already taken.");
+      }
+      if (/invalid/i.test(error.message) && /email/i.test(error.message)) {
+        throw new Error("Username contains unsupported characters.");
+      }
       if (/rate limit/i.test(error.message)) {
         throw new Error("Too many signup attempts. Wait a minute and try again.");
       }

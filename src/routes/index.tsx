@@ -18,7 +18,7 @@ function HomePage() {
 
   return (
     <div
-      className="screen-theme-inbox app-shell-bg immersive-root dynamic-gradient-transition flex h-app overflow-hidden"
+      className="screen-theme-inbox app-shell-bg immersive-root dynamic-gradient-transition flex min-h-app h-app overflow-hidden"
       style={inboxGradient.style}
     >
       <ChatSidebar />

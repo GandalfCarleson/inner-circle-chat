@@ -23,7 +23,24 @@ const CORS_HEADERS = {
 };
 
 const APNS_JWT_REFRESH_INTERVAL_SECONDS = 50 * 60;
+const PUSH_DEBUG_ENABLED =
+  (Deno.env.get("PUSH_DEBUG_LOGS") || "").toLowerCase() === "true" ||
+  (Deno.env.get("APNS_USE_SANDBOX") || "").toLowerCase() === "true";
 let cachedApnsJwt: { token: string; issuedAt: number } | null = null;
+
+function logPushDebug(message: string, data?: Record<string, unknown>) {
+  if (!PUSH_DEBUG_ENABLED) return;
+  if (data) {
+    console.info(`[dispatch-message-push] ${message}`, data);
+    return;
+  }
+  console.info(`[dispatch-message-push] ${message}`);
+}
+
+function maskToken(token: string) {
+  if (token.length <= 12) return token;
+  return `${token.slice(0, 6)}...${token.slice(-6)}`;
+}
 
 function asJson(status: number, payload: Record<string, unknown>) {
   return new Response(JSON.stringify(payload), {
@@ -109,6 +126,7 @@ async function sendApnsNotification(args: {
   }
 
   return {
+    apnsId: response.headers.get("apns-id"),
     ok: response.ok,
     status: response.status,
     reason,
@@ -180,7 +198,9 @@ Deno.serve(async (request) => {
       return asJson(500, { error: recipientError.message });
     }
 
-    const recipientIds = Array.from(new Set((recipients ?? []).map((row) => row.user_id))).filter(Boolean);
+    const recipientIds = Array.from(new Set((recipients ?? []).map((row) => row.user_id))).filter(
+      Boolean,
+    );
     if (recipientIds.length === 0) {
       return asJson(200, { ok: true, sent: 0, skipped: 0, staleTokensDeleted: 0 });
     }
@@ -205,17 +225,44 @@ Deno.serve(async (request) => {
     }
 
     const iosTokens = (tokens ?? []).filter((row) => row.platform === "ios");
-    if (iosTokens.length === 0) {
-      return asJson(200, { ok: true, sent: 0, skipped: (tokens ?? []).length, staleTokensDeleted: 0 });
+    const normalizedIosTokenRows = iosTokens
+      .map((row) => ({ ...row, token: row.token.trim() }))
+      .filter((row) => row.token.length > 0);
+    const uniqueIosTokenByValue = new Map<string, PushTokenRow>();
+    for (const row of normalizedIosTokenRows) {
+      if (!uniqueIosTokenByValue.has(row.token)) {
+        uniqueIosTokenByValue.set(row.token, row);
+      }
+    }
+    const uniqueIosTokens = Array.from(uniqueIosTokenByValue.values());
+    const duplicateIosTokenSkips = normalizedIosTokenRows.length - uniqueIosTokens.length;
+
+    if (uniqueIosTokens.length === 0) {
+      return asJson(200, {
+        ok: true,
+        sent: 0,
+        skipped: (tokens ?? []).length,
+        staleTokensDeleted: 0,
+      });
     }
 
-    const apnsTopic = Deno.env.get("APNS_BUNDLE_ID") || "com.voideger.void";
+    const apnsTopic = getEnv("APNS_BUNDLE_ID").trim();
+    if (!apnsTopic) {
+      throw new Error("APNS_BUNDLE_ID must not be empty.");
+    }
     const sandbox = (Deno.env.get("APNS_USE_SANDBOX") || "false").toLowerCase() === "true";
+    logPushDebug("APNs delivery config", {
+      apnsTopic,
+      iosTokenRows: uniqueIosTokens.length,
+      recipientIds: recipientIds.length,
+      sandbox,
+    });
     const apnsJwt = await createApnsJwt();
     const staleTokenIds: string[] = [];
+    const failed: Array<{ reason: string | null; status: number }> = [];
     let sent = 0;
 
-    for (const row of iosTokens) {
+    for (const row of uniqueIosTokens) {
       const pushResult = await sendApnsNotification({
         deviceToken: row.token,
         bearerToken: apnsJwt,
@@ -235,11 +282,24 @@ Deno.serve(async (request) => {
           created_at: message.created_at,
         },
       });
-
       if (pushResult.ok) {
         sent += 1;
-        continue;
+      } else {
+        failed.push({ reason: pushResult.reason, status: pushResult.status });
       }
+
+      if (PUSH_DEBUG_ENABLED || !pushResult.ok) {
+        const logger = pushResult.ok ? console.info : console.warn;
+        logger("[dispatch-message-push] APNs response", {
+          apnsId: pushResult.apnsId,
+          reason: pushResult.reason,
+          recipientUserId: row.user_id,
+          status: pushResult.status,
+          token: maskToken(row.token),
+        });
+      }
+
+      if (pushResult.ok) continue;
 
       const shouldDeleteToken =
         pushResult.status === 410 ||
@@ -256,10 +316,13 @@ Deno.serve(async (request) => {
       await adminClient.from("push_tokens").delete().in("id", staleTokenIds);
     }
 
+    const skipped = (tokens ?? []).length - normalizedIosTokenRows.length + duplicateIosTokenSkips;
+
     return asJson(200, {
       ok: true,
+      failed: failed.length,
       sent,
-      skipped: (tokens ?? []).length - iosTokens.length,
+      skipped,
       staleTokensDeleted: staleTokenIds.length,
     });
   } catch (error) {

@@ -8,6 +8,7 @@ interface VideoCallScreenProps {
   connectionState: RTCPeerConnectionState;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  remoteVideoTrackCount: number;
   isMuted: boolean;
   isCameraEnabled: boolean;
   errorMessage: string | null;
@@ -37,6 +38,7 @@ export function VideoCallScreen({
   connectionState,
   localStream,
   remoteStream,
+  remoteVideoTrackCount,
   isMuted,
   isCameraEnabled,
   errorMessage,
@@ -44,6 +46,7 @@ export function VideoCallScreen({
   onToggleCamera,
   onHangup,
 }: VideoCallScreenProps) {
+  const callRole = activeCall.role;
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -52,6 +55,13 @@ export function VideoCallScreen({
     if (!element) return;
 
     element.srcObject = localStream;
+    if (import.meta.env.DEV || import.meta.env.MODE === "test") {
+      console.info("[webrtc-ui] local video srcObject assigned", {
+        role: callRole,
+        stream_id: localStream?.id ?? null,
+        track_ids: localStream?.getTracks().map((track) => track.id) ?? [],
+      });
+    }
     if (localStream) {
       void element.play().catch(() => {
         // iOS WebView can delay autoplay until user interaction.
@@ -61,13 +71,21 @@ export function VideoCallScreen({
     return () => {
       element.srcObject = null;
     };
-  }, [localStream]);
+  }, [callRole, localStream]);
 
   useEffect(() => {
     const element = remoteVideoRef.current;
     if (!element) return;
 
     element.srcObject = remoteStream;
+    if (import.meta.env.DEV || import.meta.env.MODE === "test") {
+      console.info("[webrtc-ui] remote video srcObject assigned", {
+        role: callRole,
+        stream_id: remoteStream?.id ?? null,
+        track_ids: remoteStream?.getTracks().map((track) => track.id) ?? [],
+        video_track_count: remoteStream?.getVideoTracks().length ?? 0,
+      });
+    }
     if (remoteStream) {
       void element.play().catch(() => {
         // Fallback stays visible until playback can start.
@@ -77,23 +95,21 @@ export function VideoCallScreen({
     return () => {
       element.srcObject = null;
     };
-  }, [remoteStream]);
+  }, [callRole, remoteStream]);
 
-  const hasRemoteVideo = useMemo(
-    () => (remoteStream?.getVideoTracks().length ?? 0) > 0,
-    [remoteStream],
-  );
+  const hasRemoteVideo = useMemo(() => remoteVideoTrackCount > 0, [remoteVideoTrackCount]);
 
   return (
     <div className="safe-inset fixed inset-0 z-[80] overflow-hidden bg-black">
-      {hasRemoteVideo ? (
-        <video
-          ref={remoteVideoRef}
-          autoPlay
-          playsInline
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-      ) : (
+      <video
+        ref={remoteVideoRef}
+        autoPlay
+        playsInline
+        className={`absolute inset-0 h-full w-full object-cover transition-opacity ${
+          hasRemoteVideo ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      {!hasRemoteVideo && (
         <div className="absolute inset-0 flex items-center justify-center bg-[radial-gradient(circle_at_top,_rgba(241,137,69,0.2),_transparent_52%),linear-gradient(180deg,#050505,#0b0b0b)]">
           <span className="text-[48px] font-semibold uppercase tracking-[-0.06em] text-white/78">
             {activeCall.peerDisplayName.slice(0, 1)}
